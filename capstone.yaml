@@ -1,0 +1,8 @@
+# Capstone manifest (stub). Filled in for real in Step 12.
+name: Embeddable-Widget-Lead-Capture-Platform
+repo: https://github.com/elyasbromand/Embeddable-Widget-Lead-Capture-Platform
+run: TODO      # e.g. docker compose up -d && npm run migrate up && npm run dev
+seed: TODO     # e.g. npm run seed
+test: TODO     # e.g. npm test
+base_url: http://localhost:3000
+endpoints: []  # public endpoints the evaluator should probe

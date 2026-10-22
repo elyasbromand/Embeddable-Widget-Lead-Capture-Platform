@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Secrets: never commit. Copy .env.example to .env instead.
+.env
+.env.*
+!.env.example
+
+# Build output (widget bundle)
+dist/
+
+# Logs and coverage
+*.log
+npm-debug.log*
+coverage/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

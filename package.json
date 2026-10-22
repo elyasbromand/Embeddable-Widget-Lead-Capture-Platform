@@ -1,0 +1,23 @@
+{
+  "name": "embeddable-widget-lead-capture-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Embeddable form widgets and a hardened, multi-tenant lead-capture API.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "echo \"No tests yet (Step 11)\" && exit 0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/elyasbromand/Embeddable-Widget-Lead-Capture-Platform.git"
+  },
+  "author": "Elyas Bromand",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/elyasbromand/Embeddable-Widget-Lead-Capture-Platform/issues"
+  },
+  "homepage": "https://github.com/elyasbromand/Embeddable-Widget-Lead-Capture-Platform#readme"
+}
