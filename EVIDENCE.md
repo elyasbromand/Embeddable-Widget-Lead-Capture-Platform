@@ -30,6 +30,16 @@ $ git check-ignore -v .env .env.local .env.example
 .gitignore:7:!.env.example	.env.example
 ```
 
+## Step 1 · Design document committed
+
+```
+$ git log --stat --oneline -1
+19e2cf0 Step 1: design document (data model, API surface, layers, trade-offs)
+ BUILDLOG.md    |   1 +
+ docs/DESIGN.md | 177 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 178 insertions(+)
+```
+
 ## Section 6 requirements
 
 ### 1. Authenticated widget CRUD; no valid auth is rejected (Step 3)

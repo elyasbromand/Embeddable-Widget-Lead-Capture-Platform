@@ -153,4 +153,5 @@ Environment: Windows 11, Git Bash and PowerShell both available. Prefer cross-pl
 Update this line at each gate.
 
 - Step 0 done (2026-10-22): repo public, scaffolding in place, gate proof in EVIDENCE.md.
-- Current step: **Step 1, design document** (`docs/DESIGN.md`)
+- Step 1 done (2026-10-22): `docs/DESIGN.md` committed (19e2cf0).
+- Current step: **Step 2, foundation** (docker-compose, config, migrations, error handler, `/health`)
