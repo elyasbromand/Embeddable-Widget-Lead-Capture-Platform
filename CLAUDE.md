@@ -45,7 +45,7 @@ The learner must be able to explain any 2 or 3 lines an evaluator picks.
 | Database        | PostgreSQL via `pg`, **raw SQL**, no ORM       |
 | Migrations      | `node-pg-migrate`                              |
 | Validation      | `zod`                                          |
-| Auth            | `bcrypt` + JWT bearer token                    |
+| Auth            | Argon2id (`argon2` package) + JWT bearer token |
 | Rate limiting   | `express-rate-limit` (in-memory; documented limitation) |
 | Background jobs | `pg-boss` (separate worker process)            |
 | Email           | `nodemailer` → Mailpit (local)                 |
@@ -111,7 +111,7 @@ geo (never throws, `null` on failure) → insert → enqueue email (failure logg
 
 - Secrets only in env vars. `.env` is git-ignored; `.env.example` lists every variable with placeholders.
 - Never print, log or commit real secrets. pino redacts `authorization`, `password`, tokens.
-- Passwords hashed with bcrypt. Login failures use one generic message.
+- Passwords hashed with Argon2id (`argon2`, OWASP parameters). Login failures use one generic message.
 - Widget text written by tenants is rendered with `textContent`, **never** `innerHTML`.
 - Public widget config never includes `owner_id` or internal keys.
 - Raw IPs are personal data: keep them out of logs.

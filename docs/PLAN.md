@@ -22,7 +22,7 @@ We build this in 13 small steps (0 to 12), in the order the brief teaches them, 
 | Database access  | `pg` with raw SQL              | You see every tenant-scoped query; no ORM hiding it                        |
 | Migrations       | `node-pg-migrate`              | Brief requires schema as migrations                                        |
 | Validation       | `zod`                          | Named in the brief; builds schemas at runtime from widget fields           |
-| Auth             | `bcrypt` plus JWT bearer token | Easy to test with curl; passwords never stored in clear                    |
+| Auth             | Argon2id (`argon2`) plus JWT bearer token | Easy to test with curl; Argon2id is memory-hard and OWASP's first choice; passwords never stored in clear |
 | Rate limiting    | `express-rate-limit`           | Named in the brief; per-IP and per-widget keys                             |
 | Background jobs  | `pg-boss`                      | Queue on the Postgres we already run; retries and dead-letter built in     |
 | Email            | `nodemailer` into Mailpit      | Free local catcher; failure tolerance is what is graded                    |
@@ -79,7 +79,7 @@ Every box in the brief's Section 6, every shared requirement and all six probes 
 | 3   | At least one background job, with retries and a failure alert | 8        | pg-boss queue for confirmation email; retries with backoff; final failure goes to a dead-letter queue and an ALERT log line                                                     |
 | 4   | Real persistence: migrations, right indexes, isolated tenants | 2, 3, 10 | node-pg-migrate files; indexes chosen from the queries we write; every query scoped by owner                                                                                    |
 | 5   | Idempotency where it matters                                  | 6, 8     | `Idempotency-Key` on submissions with a unique index; job `singletonKey` so one email per submission                                                                            |
-| 6   | Secrets clean                                                 | 0, 2, 12 | Env only, validated at boot, `.env` ignored, pino redaction, bcrypt hashes; no third-party secrets are stored, so nothing needs encrypting at rest; gitleaks scan before submit |
+| 6   | Secrets clean                                                 | 0, 2, 12 | Env only, validated at boot, `.env` ignored, pino redaction, Argon2id hashes; no third-party secrets are stored, so nothing needs encrypting at rest; gitleaks scan before submit |
 | 7   | Cost tracking, if AI is used                                  | 12       | The product uses no AI, so we state that in the README; our own AI use goes in BUILDLOG.md                                                                                      |
 
 ## Steps 0 to 3: setup, design, foundation, tenants
@@ -174,7 +174,7 @@ The owner side of the product, with isolation enforced in every query rather tha
 
 **Build**
 
-- [ ] `POST /auth/register` and `POST /auth/login` with bcrypt and a JWT; login failures use one generic message
+- [ ] `POST /auth/register` and `POST /auth/login` with Argon2id (`argon2`) and a JWT; login failures use one generic message
 - [ ] `requireAuth` middleware that puts `req.user.id` on the request
 - [ ] Widget CRUD under `/api/widgets`: create, list, get, patch, delete. A zod schema checks type (signup form, contact form or CTA popover; one or two types are enough), title and description length, field list size, button text and display options
 - [ ] Every repository function takes `ownerId`: `WHERE id = $1 AND owner_id = $2`. Another tenant's widget returns 404

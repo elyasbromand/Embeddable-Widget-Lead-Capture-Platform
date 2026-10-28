@@ -40,7 +40,7 @@ guards it. The server itself is protected by rate limiting, validation, the hone
 
 A tenant is a user account. All ids are uuids; widgets also carry a random `public_id` (nanoid).
 
-**`users`**: `id` uuid PK · `email` text unique (stored lowercased) · `password_hash` text (bcrypt)
+**`users`**: `id` uuid PK · `email` text unique (stored lowercased) · `password_hash` text (Argon2id, PHC string: algorithm, parameters and salt travel with the hash)
 · `created_at` timestamptz
 
 **`widgets`**: `id` uuid PK (internal, never leaves the database) · `public_id` text unique (in the
