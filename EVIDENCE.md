@@ -40,6 +40,47 @@ $ git log --stat --oneline -1
  2 files changed, 178 insertions(+)
 ```
 
+## Step 2 · Foundation: compose up, migrate up, `/health` 200, migrate down
+
+```
+$ docker compose up -d --wait && docker compose ps
+NAME                                                 IMAGE                    STATUS                   PORTS
+embeddable-widget-lead-capture-platform-mailpit-1    axllent/mailpit:latest   Up 6 seconds (healthy)   0.0.0.0:1025->1025/tcp, 0.0.0.0:8025->8025/tcp
+embeddable-widget-lead-capture-platform-postgres-1   postgres:17-alpine       Up 6 seconds (healthy)   0.0.0.0:5432->5432/tcp
+
+$ npm run migrate down 3
+### MIGRATION 1792792481862_create-submissions (DOWN) ###
+DROP TABLE submissions;
+### MIGRATION 1792792478063_create-widgets (DOWN) ###
+DROP TABLE widgets;
+### MIGRATION 1792792474378_create-users (DOWN) ###
+DROP TABLE users;
+Migrations complete!
+
+$ psql -c "\dt"
+ public | pgmigrations | table | app
+(1 row)
+
+$ npm run migrate up
+### MIGRATION 1792792474378_create-users (UP) ###
+### MIGRATION 1792792478063_create-widgets (UP) ###
+### MIGRATION 1792792481862_create-submissions (UP) ###
+Migrations complete!
+
+$ psql -c "\dt"
+ public | pgmigrations | table | app
+ public | submissions  | table | app
+ public | users        | table | app
+ public | widgets      | table | app
+(4 rows)
+
+$ curl -i localhost:3000/health
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+
+{"status":"ok","db":"ok"}
+```
+
 ## Section 6 requirements
 
 ### 1. Authenticated widget CRUD; no valid auth is rejected (Step 3)
@@ -110,11 +151,35 @@ _Pending: fresh-clone run from the README alone._
 
 ### S1. Layered architecture (Steps 2, 3)
 
-_Pending._
+Step 2: `/health` goes route → service → repository; SQL only in `src/repositories/`.
+
+```
+src/http/routes/health.js            -> healthService.check()
+src/services/healthService.js        -> healthRepository.ping(), maps failure to ServiceUnavailableError
+src/repositories/healthRepository.js -> pool.query("SELECT 1")
+```
+
+_Pending (Step 3): owner routes following the same pattern._
 
 ### S2. Validation at the boundary, never a 500 for bad input (Steps 2, 5)
 
-_Pending._
+Step 2: one error envelope from the central handler (`src/http/middleware/errorHandler.js`).
+Body-parser errors (400/413/415) are mapped there but not exercised until Step 5.
+
+```
+$ curl -i localhost:3000/nope
+HTTP/1.1 404 Not Found
+{"error":{"code":"NOT_FOUND","message":"No route for GET /nope"}}
+
+$ docker compose stop postgres && curl -i localhost:3000/health
+HTTP/1.1 503 Service Unavailable
+{"error":{"code":"SERVICE_UNAVAILABLE","message":"Database unavailable"}}
+
+$ docker compose up -d --wait postgres && curl localhost:3000/health
+{"status":"ok","db":"ok"} [200]
+```
+
+_Pending (Step 5): malformed, oversized, wrong content type, invalid fields._
 
 ### S3. Background job with retries and a failure alert (Step 8)
 
@@ -122,7 +187,23 @@ _Pending._
 
 ### S4. Real persistence: migrations, right indexes, isolated tenants (Steps 2, 3, 10)
 
-_Pending._
+Step 2: schema and indexes come only from `migrations/` (see the Step 2 up/down transcript above).
+
+```
+$ psql -c "SELECT indexname, indexdef FROM pg_indexes WHERE schemaname='public' AND tablename IN ('users','widgets','submissions') ORDER BY tablename, indexname;"
+ submissions_owner_id_created_at_idx       | CREATE INDEX ... ON public.submissions USING btree (owner_id, created_at)
+ submissions_pkey                          | CREATE UNIQUE INDEX ... ON public.submissions USING btree (id)
+ submissions_widget_id_created_at_idx      | CREATE INDEX ... ON public.submissions USING btree (widget_id, created_at)
+ submissions_widget_id_idempotency_key_idx | CREATE UNIQUE INDEX ... ON public.submissions USING btree (widget_id, idempotency_key)
+ users_email_key                           | CREATE UNIQUE INDEX ... ON public.users USING btree (email)
+ users_pkey                                | CREATE UNIQUE INDEX ... ON public.users USING btree (id)
+ widgets_owner_id_idx                      | CREATE INDEX ... ON public.widgets USING btree (owner_id)
+ widgets_pkey                              | CREATE UNIQUE INDEX ... ON public.widgets USING btree (id)
+ widgets_public_id_key                     | CREATE UNIQUE INDEX ... ON public.widgets USING btree (public_id)
+(9 rows)
+```
+
+_Pending (Steps 3, 10): owner-scoped queries, EXPLAIN on dashboard queries._
 
 ### S5. Idempotency where it matters (Steps 6, 8)
 
@@ -130,7 +211,17 @@ _Pending._
 
 ### S6. Secrets clean (Steps 0, 2, 12)
 
-_Pending: gitleaks scan output._
+Step 2: config validated at boot (`src/config/index.js`); pino redacts `authorization`, `cookie`,
+`password`, `token` and `err.client`. The last path was added after a real log line from a dropped
+Postgres connection contained the pg client object (connection params and its cancel `secretKey`).
+After the fix, with Postgres stopped and restarted:
+
+```
+$ grep -c -E "secretKey|connectionParameters" server.log
+0
+```
+
+_Pending (Step 12): gitleaks scan output._
 
 ### S7. Cost tracking, if AI is used (Step 12)
 

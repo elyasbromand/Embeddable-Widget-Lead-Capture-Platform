@@ -50,7 +50,7 @@ definitions, the source of the runtime zod schema) · `display` jsonb · `create
 
 **`submissions`**: `id` uuid PK · `widget_id` uuid FK → widgets, cascade · `owner_id` uuid FK →
 users, cascade (copied from the widget row at insert) · `data` jsonb (visitor answers) · `ip` inet
-(from the connection, never the body) · `geo` jsonb nullable (`null` when all providers fail) ·
+nullable (from the connection, never the body; set to `NULL` after 90 days, see §7.2) · `geo` jsonb nullable (`null` when all providers fail) ·
 `idempotency_key` text nullable · `created_at` timestamptz
 
 **Indexes**

@@ -8,7 +8,10 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "echo \"No tests yet (Step 11)\" && exit 0"
+    "dev": "node --env-file=.env --watch src/server.js",
+    "start": "node --env-file=.env src/server.js",
+    "test": "echo \"No tests yet (Step 11)\" && exit 0",
+    "migrate": "node --env-file=.env node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations"
   },
   "repository": {
     "type": "git",
@@ -19,5 +22,14 @@
   "bugs": {
     "url": "https://github.com/elyasbromand/Embeddable-Widget-Lead-Capture-Platform/issues"
   },
-  "homepage": "https://github.com/elyasbromand/Embeddable-Widget-Lead-Capture-Platform#readme"
+  "homepage": "https://github.com/elyasbromand/Embeddable-Widget-Lead-Capture-Platform#readme",
+  "dependencies": {
+    "express": "^5.3.0",
+    "pg": "^8.23.1",
+    "pino": "^10.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "node-pg-migrate": "^9.0.0"
+  }
 }

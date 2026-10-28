@@ -1,0 +1,30 @@
+# Local dependencies only. The app itself runs on the host with `npm run dev`.
+# Start: docker compose up -d     Stop: docker compose down     Wipe data: docker compose down -v
+# Credentials come from .env (compose reads it automatically). `:?` refuses to start if one is missing.
+
+services:
+  postgres:
+    image: postgres:17-alpine          # pinned major version: same behaviour on every machine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+    ports:
+      - "5432:5432"                    # host:container, so the app connects via localhost:5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # named volume: data survives `docker compose down`
+    healthcheck:                       # "running" is not "ready"; this checks Postgres accepts connections
+      # $$ escapes compose substitution, so the container's own shell expands these vars
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest      # fake SMTP server: catches every email, sends none
+    ports:
+      - "1025:1025"                    # SMTP, where nodemailer will send (Step 8)
+      - "8025:8025"                    # web UI to read caught emails: http://localhost:8025
+
+volumes:
+  pgdata:
