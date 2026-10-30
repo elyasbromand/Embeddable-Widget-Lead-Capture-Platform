@@ -85,11 +85,93 @@ Content-Type: application/json; charset=utf-8
 
 ### 1. Authenticated widget CRUD; no valid auth is rejected (Step 3)
 
-_Pending: curl without a token returns 401._
+Step 3 (2026-10-31). Every `/api/widgets` route sits behind `requireAuth`, which runs before body
+parsing. Demo tenants from `npm run seed` (password `demo-password-123`); tokens shortened.
+
+```
+$ curl localhost:3000/api/widgets
+{"error":{"code":"UNAUTHORIZED","message":"Authentication required"}}
+-> HTTP 401
+
+$ curl localhost:3000/api/widgets -H "Authorization: Bearer abc.def.ghi"
+{"error":{"code":"UNAUTHORIZED","message":"Invalid or expired token"}}
+-> HTTP 401
+```
+
+Auth itself (`/auth/register`, `/auth/login`):
+
+```
+$ register alice                          -> HTTP 201  {"user":{"id":"bcf25b3f-…","email":"alice@example.com"},"token":"eyJ…"}
+$ register ' ALICE@Example.com ' again    -> HTTP 409  {"error":{"code":"CONFLICT","message":"Email is already registered"}}
+$ login correct password (Alice@…)        -> HTTP 200  {"user":{…},"token":"eyJ…"}
+$ login wrong password                    -> HTTP 401  {"error":{"code":"UNAUTHORIZED","message":"Invalid email or password"}}
+$ login unknown email                     -> HTTP 401  {"error":{"code":"UNAUTHORIZED","message":"Invalid email or password"}}
+$ malformed JSON                          -> HTTP 400  {"error":{"code":"BAD_REQUEST","message":"Malformed JSON body"}}
+$ extra key role                          -> HTTP 422  {"error":{"code":"VALIDATION_FAILED",…,"details":[{"path":"","message":"Unrecognized key: \"role\""}]}}
+$ oversized body (11kb)                   -> HTTP 413  {"error":{"code":"PAYLOAD_TOO_LARGE","message":"Request body is too large"}}
+
+$ timing: 5x wrong password vs 5x unknown email (seconds)   # DUMMY_HASH: no account-existence leak
+wrong-pw 0.040862   unknown-email 0.040859
+wrong-pw 0.043862   unknown-email 0.040942
+wrong-pw 0.041625   unknown-email 0.048720
+wrong-pw 0.043709   unknown-email 0.050217
+wrong-pw 0.056211   unknown-email 0.042682
+```
+
+Widget CRUD as the owner (tenant A):
+
+```
+$ A: POST new widget (no display)
+{"id":"PJRbypyn6oN6","type":"contact","title":"Temp","description":null,"buttonText":"Go","fields":[{"name":"email","type":"email","label":"Email","required":false}],"display":{},…}
+-> DELETE own: HTTP 204
+-> DELETE again: HTTP 404
+
+$ A: PATCH title only            -> HTTP 200  "title":"Monthly newsletter","description":"One email a month, no spam."   # description kept
+$ A: PATCH {"description":null}  -> HTTP 200  "description":null                                                       # cleared
+$ A: PATCH {} (schema test)      -> [": Provide at least one field to update"]
+```
+
+Known gap: `Content-Type: text/plain` currently gives 422, not 415. Planned for Step 5.
 
 ### 2. Tenant A cannot read or change tenant B's widgets or submissions (Steps 3, 11)
 
-_Pending: curl as A on B's widget returns 404; test name and output._
+Step 3 (2026-10-31): curl proof. Tenant A owns `lvuvcZeFr-42`, tenant B owns `cqaxksTr2jOc`.
+Every query in `src/repositories/widgetsRepository.js` filters `WHERE owner_id = $n AND public_id = $m`.
+
+```
+$ A: GET B's widget cqaxksTr2jOc
+{"error":{"code":"NOT_FOUND","message":"Widget not found"}}
+-> HTTP 404
+
+$ A: GET a widget id that does not exist
+{"error":{"code":"NOT_FOUND","message":"Widget not found"}}
+-> HTTP 404
+
+$ A: PATCH B's widget  {"title":"pwned"}
+{"error":{"code":"NOT_FOUND","message":"Widget not found"}}
+-> HTTP 404
+
+$ A: DELETE B's widget
+{"error":{"code":"NOT_FOUND","message":"Widget not found"}}
+-> HTTP 404
+
+$ A: list (only A's widgets)
+[{"id":"lvuvcZeFr-42","type":"signup","title":"Monthly newsletter",…}]
+-> HTTP 200
+
+$ B: GET own widget afterwards (unchanged)
+{"id":"cqaxksTr2jOc","type":"contact","title":"Contact us","description":null,"buttonText":"Send",…}
+-> HTTP 200
+
+$ psql: widgets by owner
+        email         |  public_id   |       title
+----------------------+--------------+--------------------
+ tenant-a@example.com | lvuvcZeFr-42 | Monthly newsletter
+ tenant-b@example.com | cqaxksTr2jOc | Contact us
+(2 rows)
+```
+
+B's widget and a non-existent id give the same 404 body. _Pending (Step 11): automated test name and output; submissions isolation (Step 10)._
 
 ### 3. Embed snippet generated per widget (Step 4)
 
@@ -159,7 +241,15 @@ src/services/healthService.js        -> healthRepository.ping(), maps failure to
 src/repositories/healthRepository.js -> pool.query("SELECT 1")
 ```
 
-_Pending (Step 3): owner routes following the same pattern._
+Step 3: auth and widgets follow the same pattern.
+
+```
+src/http/routes/auth.js     -> zod parse -> authService.register/login  -> usersRepository (SQL)
+src/http/routes/widgets.js  -> requireAuth -> zod parse -> widgetsService -> widgetsRepository (SQL)
+```
+
+Services throw `AppError`s (`ConflictError`, `UnauthorizedError`, `NotFoundError`) and never touch
+`req`/`res`; repositories return rows or `null` and never decide HTTP status.
 
 ### S2. Validation at the boundary, never a 500 for bad input (Steps 2, 5)
 
@@ -203,7 +293,19 @@ $ psql -c "SELECT indexname, indexdef FROM pg_indexes WHERE schemaname='public' 
 (9 rows)
 ```
 
-_Pending (Steps 3, 10): owner-scoped queries, EXPLAIN on dashboard queries._
+Step 3: owner-scoped widget queries; the cross-tenant proof is under row 2 above. The seed is safe to rerun:
+
+```
+$ npm run seed   (run 1)
+"email":"tenant-a@example.com","widgetId":"lvuvcZeFr-42","created":true
+"email":"tenant-b@example.com","widgetId":"cqaxksTr2jOc","created":true
+
+$ npm run seed   (run 2)
+"email":"tenant-a@example.com","widgetId":"lvuvcZeFr-42","created":false
+"email":"tenant-b@example.com","widgetId":"cqaxksTr2jOc","created":false
+```
+
+_Pending (Step 10): EXPLAIN on dashboard queries._
 
 ### S5. Idempotency where it matters (Steps 6, 8)
 
@@ -218,6 +320,17 @@ After the fix, with Postgres stopped and restarted:
 
 ```
 $ grep -c -E "secretKey|connectionParameters" server.log
+0
+```
+
+Step 3: passwords stored as Argon2id (OWASP parameters inside the PHC string); `JWT_SECRET` must be
+at least 32 characters or the app refuses to boot; no password or hash in the server log.
+
+```
+$ psql -c "SELECT email, left(password_hash, 30) || '...' FROM users;"
+ alice@example.com | $argon2id$v=19$m=19456,p=1,t=2...
+
+$ grep -ciE 'correct-horse|argon2id|password_hash' server.log
 0
 ```
 

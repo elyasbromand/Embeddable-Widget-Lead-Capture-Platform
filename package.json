@@ -10,7 +10,8 @@
   "scripts": {
     "dev": "node --env-file=.env --watch src/server.js",
     "start": "node --env-file=.env src/server.js",
-    "test": "echo \"No tests yet (Step 11)\" && exit 0",
+    "seed": "node --env-file=.env scripts/seed.js",
+    "test":"echo \"No tests yet (Step 11)\" && exit 0",
     "migrate": "node --env-file=.env node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations"
   },
   "repository": {

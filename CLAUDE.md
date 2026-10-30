@@ -155,4 +155,5 @@ Update this line at each gate.
 - Step 0 done (2026-10-22): repo public, scaffolding in place, gate proof in EVIDENCE.md.
 - Step 1 done (2026-10-22): `docs/DESIGN.md` committed (19e2cf0).
 - Step 2 done (2026-10-28): foundation running; compose, migrations up/down, `/health`, error envelope, pino redaction. Proof in EVIDENCE.md.
-- Current step: **Step 3, auth, widget CRUD and tenant isolation**
+- Step 3 done (2026-10-31): register/login (Argon2id + JWT), widget CRUD, owner-scoped queries, seed. Gate (401, cross-tenant 404) in EVIDENCE.md.
+- Current step: **Step 4, embed snippet and cached delivery**
