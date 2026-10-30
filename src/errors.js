@@ -31,6 +31,12 @@ export class NotFoundError extends AppError {
   }
 }
 
+export class ConflictError extends AppError {
+  constructor(message = "Conflict") {
+    super(409, "CONFLICT", message);
+  }
+}
+
 export class PayloadTooLargeError extends AppError {
   constructor(message = "Request body is too large") {
     super(413, "PAYLOAD_TOO_LARGE", message);

@@ -9,6 +9,8 @@ const envSchema = z.object({
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
     .default("info"),
+  // HS256 key. Short or guessable secrets can be brute-forced offline from any token we issue.
+  JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
 });
 
 const result = envSchema.safeParse(process.env);
