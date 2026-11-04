@@ -52,3 +52,6 @@ export const createWidgetSchema = widget;
 export const updateWidgetSchema = widget
   .partial()
   .refine((patch) => Object.keys(patch).length > 0, "Provide at least one field to update");
+
+// Shape of every public id we issue: randomBytes(9).toString("base64url") is always 12 of these.
+export const publicIdSchema = z.string().regex(/^[A-Za-z0-9_-]{12}$/);

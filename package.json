@@ -9,9 +9,12 @@
   },
   "scripts": {
     "dev": "node --env-file=.env --watch src/server.js",
+    "predev": "npm run build:widget",
     "start": "node --env-file=.env src/server.js",
+    "prestart": "npm run build:widget",
     "seed": "node --env-file=.env scripts/seed.js",
-    "test":"echo \"No tests yet (Step 11)\" && exit 0",
+    "build:widget": "node scripts/build-widget.js",
+    "test": "echo \"No tests yet (Step 11)\" && exit 0",
     "migrate": "node --env-file=.env node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations"
   },
   "repository": {
@@ -33,6 +36,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "node-pg-migrate": "^9.0.0"
   }
 }

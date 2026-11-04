@@ -124,7 +124,7 @@ Planned; update this section as each one actually exists.
 docker compose up -d        # Postgres + Mailpit (Mailpit UI: http://localhost:8025)
 npm run migrate up          # apply migrations   (npm run migrate down to roll back)
 npm run seed                # two demo tenants with a widget each
-npm run dev                 # API on http://localhost:3000 (auto-restart on change; `npm start` without)
+npm run dev                 # builds the widget, then API on http://localhost:3000 (auto-restart; `npm start` without)
 npm run worker              # pg-boss worker (email jobs)
 npm run build:widget        # esbuild → dist/widget.<hash>.js + manifest
 npx serve test-site -l 5500 # second-origin test page
@@ -156,4 +156,5 @@ Update this line at each gate.
 - Step 1 done (2026-10-22): `docs/DESIGN.md` committed (19e2cf0).
 - Step 2 done (2026-10-28): foundation running; compose, migrations up/down, `/health`, error envelope, pino redaction. Proof in EVIDENCE.md.
 - Step 3 done (2026-10-31): register/login (Argon2id + JWT), widget CRUD, owner-scoped queries, seed. Gate (401, cross-tenant 404) in EVIDENCE.md.
-- Current step: **Step 4, embed snippet and cached delivery**
+- Step 4 done (2026-11-04): snippet, loader (300 s), hashed bundle (immutable), public config with CORS, ETag/304. Proof in EVIDENCE.md.
+- Current step: **Step 5, public submission endpoint**

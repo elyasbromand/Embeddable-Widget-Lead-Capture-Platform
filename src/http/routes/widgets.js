@@ -1,5 +1,6 @@
 import express, { Router } from "express";
 import { requireAuth } from "../middleware/requireAuth.js";
+import { checkWidgetId } from "../middleware/widgetId.js";
 import { parse } from "../validate.js";
 import { createWidgetSchema, updateWidgetSchema } from "../schemas/widgets.js";
 import * as widgetsService from "../../services/widgetsService.js";
@@ -10,6 +11,7 @@ export const widgetsRouter = Router();
 widgetsRouter.use(requireAuth);
 // 10 fields with short strings fit easily; anything bigger is a 413.
 widgetsRouter.use(express.json({ limit: "10kb" }));
+widgetsRouter.param("id", checkWidgetId);
 
 // req.user.id comes from the verified token, never from the body or the URL.
 widgetsRouter.post("/", async (req, res) => {

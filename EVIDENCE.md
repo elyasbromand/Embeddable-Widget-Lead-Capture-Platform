@@ -175,15 +175,98 @@ B's widget and a non-existent id give the same 404 body. _Pending (Step 11): aut
 
 ### 3. Embed snippet generated per widget (Step 4)
 
-_Pending: create-widget response containing the `<script>` line._
+Step 4 (2026-11-04): the snippet is derived in `widgetsService.addSnippet` from `PUBLIC_BASE_URL`
+and the public id (not stored). Also returned by list, get and update.
+
+```
+$ curl -s -X POST http://localhost:3000/api/widgets -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"type":"contact","title":"Gate 4 widget","buttonText":"Send","fields":[{"name":"email","type":"email","label":"Email","required":true}]}'
+{"id":"yzDrs08dptWD","type":"contact","title":"Gate 4 widget","description":null,"buttonText":"Send","fields":[{"name":"email","type":"email","label":"Email","required":true}],"display":{},"createdAt":"2026-11-03T23:21:17.207Z","updatedAt":"2026-11-03T23:21:17.207Z","snippet":"<script src=\"http://localhost:3000/widget.js?id=yzDrs08dptWD\"></script>"}
+HTTP 201
+```
 
 ### 4. Public config endpoint: small payload, correct cache headers (Step 4)
 
-_Pending: `curl -I` showing Cache-Control and ETag; 304 on repeat._
+Step 4 (2026-11-04): `GET /widgets/:id/config`. 336 bytes, only the fields the form needs (no
+`owner_id`, no internal uuid, no timestamps). CORS `*` without credentials, also on 304 and 404.
+
+```
+$ curl -s http://localhost:3000/widgets/lvuvcZeFr-42/config
+{"id":"lvuvcZeFr-42","type":"signup","title":"Monthly newsletter","description":"One email a month, no spam.","buttonText":"Subscribe","fields":[{"name":"email","type":"email","label":"Email","required":true},{"name":"first_name","type":"text","label":"First name","required":false}],"display":{"theme":"light","accentColor":"#2563eb"}}
+
+$ curl -I -H "Origin: http://localhost:5500" http://localhost:3000/widgets/lvuvcZeFr-42/config
+HTTP/1.1 200 OK
+Access-Control-Allow-Origin: *
+Cache-Control: public, max-age=60
+Content-Type: application/json; charset=utf-8
+Content-Length: 336
+ETag: W/"150-nRsB6Bp169R+uLL2PjGolYXc74U"
+
+$ curl -I -H 'If-None-Match: W/"150-nRsB6Bp169R+uLL2PjGolYXc74U"' http://localhost:3000/widgets/lvuvcZeFr-42/config
+HTTP/1.1 304 Not Modified
+Access-Control-Allow-Origin: *
+Cache-Control: public, max-age=60
+ETag: W/"150-nRsB6Bp169R+uLL2PjGolYXc74U"
+
+$ curl -i -H "Origin: http://localhost:5500" http://localhost:3000/widgets/does-not-exist/config
+HTTP/1.1 404 Not Found
+Access-Control-Allow-Origin: *
+Cache-Control: public, max-age=10
+Content-Type: application/json; charset=utf-8
+Content-Length: 59
+{"error":{"code":"NOT_FOUND","message":"Widget not found"}}
+```
+
+The owner API gets no CORS header (`curl -i -H "Origin: http://localhost:5500" /api/widgets` →
+`401`, no `Access-Control-*` line), because the public router is mounted at `/widgets` only.
+
+The ETag follows the content, so an owner's edit is not hidden behind a stale 304:
+
+```
+ETag before edit: W/"150-nRsB6Bp169R+uLL2PjGolYXc74U"
+PATCH /api/widgets/lvuvcZeFr-42 {"title":"Monthly newsletter (edited)"}
+ETag after edit:  W/"159-+cVHkX6acS2zta/DUHKaacEfnRU"
+old ETag after edit → 200 (full body, not 304)
+title restored → ETag back to W/"150-nRsB6Bp169R+uLL2PjGolYXc74U"
+```
 
 ### 5. Widget JS served as a versioned bundle (Step 4)
 
-_Pending: hashed bundle URL with `immutable`; loader with short cache._
+Step 4 (2026-11-04): `npm run build:widget` (esbuild) writes `dist/widget.<content-hash>.js` and
+`dist/manifest.json`; the loader reads the manifest at boot.
+
+```
+$ npm run build:widget
+built dist/widget.6SJVSAE7.js (270 bytes)
+
+$ curl -I "http://localhost:3000/widget.js?id=lvuvcZeFr-42"
+HTTP/1.1 200 OK
+Cache-Control: public, max-age=300
+Content-Type: text/javascript; charset=utf-8
+Content-Length: 341
+
+$ curl -s "http://localhost:3000/widget.js?id=lvuvcZeFr-42" | grep b.src
+  b.src = "http://localhost:3000/widget.6SJVSAE7.js";
+
+$ curl -I http://localhost:3000/widget.6SJVSAE7.js
+HTTP/1.1 200 OK
+Cache-Control: public, max-age=31536000, immutable
+Content-Type: text/javascript; charset=utf-8
+Content-Length: 270
+```
+
+An unknown hash (`/widget.NOPE1234.js`) returns a JSON 404, and `/manifest.json` is not served (404).
+
+The chain runs in a real browser: headless Chrome on a `file://` page holding only the snippet
+(`chrome --headless=new --virtual-time-budget=5000 --dump-dom embed-test.html`). The loader added
+the bundle tag, and the stub bundle rendered (the real form is Step 9):
+
+```
+<script src="http://localhost:3000/widget.js?id=lvuvcZeFr-42"></script><script
+src="http://localhost:3000/widget.6SJVSAE7.js" async="" data-widget-id="lvuvcZeFr-42"></script><div>Widget
+lvuvcZeFr-42 loaded (bundle stub; the form arrives in Step 9).</div>
+```
 
 ### 6. Widget renders on a different origin (Step 9)
 

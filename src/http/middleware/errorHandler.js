@@ -26,7 +26,10 @@ export function errorHandler(err, req, res, next) {
   // Response already started (e.g. mid-stream): let Express close the connection.
   if (res.headersSent) return next(err);
 
-  const mapped = bodyParserErrors[err?.type]?.();
+  // A URIError is a route param Express could not decode (e.g. /widgets/%E0%A4%A): bad input, not a bug.
+  const mapped =
+    bodyParserErrors[err?.type]?.() ??
+    (err instanceof URIError ? new BadRequestError("Malformed URL") : undefined);
   const appError = err instanceof AppError ? err : mapped;
 
   if (appError) {
