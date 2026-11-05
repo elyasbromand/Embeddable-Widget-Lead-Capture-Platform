@@ -5,7 +5,8 @@ import { pool } from "./db.js";
 // createWidget takes owner_id from the token; findPublicConfig is the one deliberately public read.
 //
 // Rows come back in the API shape: `id` is public_id, camelCase via quoted aliases.
-// The internal uuid and owner_id never leave this file.
+// The internal uuid and owner_id stay out of API responses. Only findWidgetForSubmission returns
+// them, because a submission row needs them.
 // jsonb columns (fields, display): pass JSON.stringify(value) as the parameter.
 
 // A missing description is stored as NULL; a missing display falls back to '{}'
@@ -101,6 +102,16 @@ export async function findPublicConfig(publicId) {
     `SELECT public_id AS id, type, title, description, button_text AS "buttonText", fields, display
      FROM widgets
      WHERE public_id = $1`,
+    [publicId]
+  );
+  return result.rows[0] ?? null;
+}
+
+// For POST /submissions only. Public like findPublicConfig, but returns the internal id and
+// owner_id, because the submission row needs them.
+export async function findWidgetForSubmission(publicId) {
+  const result = await pool.query(
+    `SELECT id, owner_id AS "ownerId", fields FROM widgets WHERE public_id = $1`, 
     [publicId]
   );
   return result.rows[0] ?? null;

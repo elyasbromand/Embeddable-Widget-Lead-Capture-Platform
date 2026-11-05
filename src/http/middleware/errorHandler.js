@@ -27,9 +27,11 @@ export function errorHandler(err, req, res, next) {
   if (res.headersSent) return next(err);
 
   // A URIError is a route param Express could not decode (e.g. /widgets/%E0%A4%A): bad input, not a bug.
+  // A 400 with no `type` is a body the parser could not read, e.g. corrupt gzip bytes.
   const mapped =
     bodyParserErrors[err?.type]?.() ??
-    (err instanceof URIError ? new BadRequestError("Malformed URL") : undefined);
+    (err instanceof URIError ? new BadRequestError("Malformed URL") : undefined) ??
+    (err?.status === 400 ? new BadRequestError("Malformed request body") : undefined);
   const appError = err instanceof AppError ? err : mapped;
 
   if (appError) {

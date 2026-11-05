@@ -274,15 +274,100 @@ _Pending: browser console and page on :5500 calling the API on :3000._
 
 ### 7. Cross-origin submit works; preflight handled (Step 5)
 
-_Pending: `OPTIONS` transcript with Access-Control headers, then a browser POST._
+Step 5 (2026-11-05): preflight by curl. A 204 with no body; the middleware ends the request before the JSON parser.
+
+```
+$ curl -i -X OPTIONS localhost:3000/submissions -H "Origin: http://localhost:5500" -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: content-type,idempotency-key"
+HTTP/1.1 204 No Content
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Idempotency-Key
+Access-Control-Max-Age: 7200
+```
+
+_Pending (Step 9): a real browser POST from the second origin, with the `OPTIONS` row visible in DevTools._
 
 ### 8. Malformed and oversized payloads rejected with 4xx JSON — Probe 2 (Step 5)
 
-_Pending: transcript showing 400, 413, 415, 422, never 500._
+Step 5 (2026-11-05). Each error keeps the envelope and the CORS headers, and no bad request added a row. A malformed `widgetId` gets the same 404 as an unknown one.
+
+```
+$ curl -i -X POST localhost:3000/submissions -H "Origin: http://localhost:5500" ...   # malformed JSON: {bad
+HTTP/1.1 400 Bad Request
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Idempotency-Key
+Access-Control-Max-Age: 7200
+{"error":{"code":"BAD_REQUEST","message":"Malformed JSON body"}}
+$ curl -i -X POST localhost:3000/submissions -H "Origin: http://localhost:5500" ...   # 11 kB body
+HTTP/1.1 413 Payload Too Large
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Idempotency-Key
+Access-Control-Max-Age: 7200
+{"error":{"code":"PAYLOAD_TOO_LARGE","message":"Request body is too large"}}
+$ curl -i -X POST localhost:3000/submissions -H "Origin: http://localhost:5500" ...   # Content-Type: text/plain
+HTTP/1.1 415 Unsupported Media Type
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Idempotency-Key
+Access-Control-Max-Age: 7200
+{"error":{"code":"UNSUPPORTED_MEDIA_TYPE","message":"Content-Type must be application/json"}}
+$ curl -i -X POST localhost:3000/submissions -H "Origin: http://localhost:5500" ...   # bad email + unknown field
+HTTP/1.1 422 Unprocessable Entity
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Idempotency-Key
+Access-Control-Max-Age: 7200
+{"error":{"code":"VALIDATION_FAILED","message":"Request validation failed","details":[{"path":"email","message":"Invalid email address"},{"path":"","message":"Unrecognized key: \"hack\""}]}}
+$ curl -i -X POST localhost:3000/submissions -H "Origin: http://localhost:5500" ...   # unknown widget
+HTTP/1.1 404 Not Found
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Idempotency-Key
+Access-Control-Max-Age: 7200
+{"error":{"code":"NOT_FOUND","message":"Widget not found"}}
+$ curl -i -X POST localhost:3000/submissions -H "Origin: http://localhost:5500" ...   # malformed widgetId
+HTTP/1.1 404 Not Found
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Idempotency-Key
+Access-Control-Max-Age: 7200
+{"error":{"code":"NOT_FOUND","message":"Widget not found"}}
+rows before bad requests: 20, after: 20
+```
 
 ### 9. Valid submissions stored and linked to the right widget and tenant — Probe 1 (Steps 5, 10)
 
-_Pending: SQL row, then the same row through the dashboard API._
+Step 5 (2026-11-05): valid POSTs for both tenants, then the stored rows. `owner_id` comes from the widget row. `geo` is empty until Step 7.
+
+```
+$ curl -i -X POST localhost:3000/submissions -H "Origin: http://localhost:5500" -H "Content-Type: application/json" --data-binary @valid-a.json   # {"widgetId":"lvuvcZeFr-42","fields":{"email":"gate5@example.com","first_name":"Gate Five"}}
+HTTP/1.1 201 Created
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Idempotency-Key
+Access-Control-Max-Age: 7200
+{"id":"b8d8ebc2-d05f-4cae-95b8-87027d427be6","createdAt":"2026-11-05T11:40:08.725Z"}
+$ curl -i -X POST ... --data-binary @valid-b.json   # tenant B widget cqaxksTr2jOc
+HTTP/1.1 201 Created
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Idempotency-Key
+Access-Control-Max-Age: 7200
+{"id":"22e3df60-6c14-4e8a-b639-bd449c4a7115","createdAt":"2026-11-05T11:40:08.819Z"}
+```
+
+```
+widgets=# select w.public_id as widget, u.email as owner, s.owner_id = w.owner_id as owner_matches, s.ip, s.data ...
+widget    |        owner         | owner_matches | ip  |                                    data                                    
+--------------+----------------------+---------------+-----+----------------------------------------------------------------------------
+ lvuvcZeFr-42 | tenant-a@example.com | t             | ::1 | {"email": "gate5@example.com", "first_name": "Gate Five"}
+ cqaxksTr2jOc | tenant-b@example.com | t             | ::1 | {"name": "Gate Five B", "email": "gate5b@example.com", "message": "hello"}
+(2 rows)
+```
+
+_Pending (Step 10): the same row through the dashboard API._
 
 ### 10. Burst gets 429 and normal traffic still works — Probe 3 (Step 6)
 
@@ -337,7 +422,9 @@ Services throw `AppError`s (`ConflictError`, `UnauthorizedError`, `NotFoundError
 ### S2. Validation at the boundary, never a 500 for bad input (Steps 2, 5)
 
 Step 2: one error envelope from the central handler (`src/http/middleware/errorHandler.js`).
-Body-parser errors (400/413/415) are mapped there but not exercised until Step 5.
+Body-parser errors (400/413/415) are mapped there and exercised in Step 5 (see row 8).
+
+Step 5 (2026-11-05): 32 POSTs of valid and hostile input against a fresh server gave 0 failures and 0 logged 500s. Besides row 8 they covered: `null` and `[]` bodies, no body, `fields` as array or null, an extra `owner_id` key, `__proto__`, NUL and a lone surrogate in a value (422), NUL and SQL-ish ids (404), a gzip bomb (413), corrupt gzip (400), `charset=latin1` and an unknown encoding (415). An `X-Forwarded-For: 1.2.3.4` request was stored as `::1`.
 
 ```
 $ curl -i localhost:3000/nope

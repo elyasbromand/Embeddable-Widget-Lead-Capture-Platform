@@ -31,7 +31,7 @@ const loaderSource = `(function () {
   var id = s && new URL(s.src).searchParams.get("id");
   if (!id) { console.error("[widget] snippet is missing ?id="); return; }
   var b = document.createElement("script");
-  b.src = ${JSON.stringify(`${config.PUBLIC_BASE_URL}/${manifest.bundle}`)};
+  b.src = ${JSON.stringify(`${config.PUBLIC_BASE_URL}/${manifest.bundle}`)}; // here we set the request for the bundle.
   b.async = true;
   b.dataset.widgetId = id;
   s.after(b);

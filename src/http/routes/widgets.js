@@ -1,5 +1,6 @@
 import express, { Router } from "express";
 import { requireAuth } from "../middleware/requireAuth.js";
+import { requireJson } from "../middleware/requireJson.js";
 import { checkWidgetId } from "../middleware/widgetId.js";
 import { parse } from "../validate.js";
 import { createWidgetSchema, updateWidgetSchema } from "../schemas/widgets.js";
@@ -9,6 +10,7 @@ export const widgetsRouter = Router();
 
 // Auth runs first, so an unauthenticated request is a 401 before any body parsing or DB work.
 widgetsRouter.use(requireAuth);
+widgetsRouter.use(requireJson);
 // 10 fields with short strings fit easily; anything bigger is a 413.
 widgetsRouter.use(express.json({ limit: "10kb" }));
 widgetsRouter.param("id", checkWidgetId);

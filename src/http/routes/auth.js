@@ -1,10 +1,12 @@
 import express, { Router } from "express";
+import { requireJson } from "../middleware/requireJson.js";
 import { parse } from "../validate.js";
 import { loginSchema, registerSchema } from "../schemas/auth.js";
 import * as authService from "../../services/authService.js";
 
 export const authRouter = Router();
 
+authRouter.use(requireJson);
 // Credentials are tiny; a small limit means a huge body is a 413, not work for the server.
 authRouter.use(express.json({ limit: "10kb" }));
 

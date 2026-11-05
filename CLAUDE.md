@@ -157,4 +157,5 @@ Update this line at each gate.
 - Step 2 done (2026-10-28): foundation running; compose, migrations up/down, `/health`, error envelope, pino redaction. Proof in EVIDENCE.md.
 - Step 3 done (2026-10-31): register/login (Argon2id + JWT), widget CRUD, owner-scoped queries, seed. Gate (401, cross-tenant 404) in EVIDENCE.md.
 - Step 4 done (2026-11-04): snippet, loader (300 s), hashed bundle (immutable), public config with CORS, ETag/304. Proof in EVIDENCE.md.
-- Current step: **Step 5, public submission endpoint**
+- Step 5 done (2026-11-05): `POST /submissions`, CORS + preflight, 415 on all JSON routes, runtime field schema, rows tied to the widget's owner. Proof in EVIDENCE.md; browser POST pending Step 9.
+- Current step: **Step 6, abuse protection and idempotency**
