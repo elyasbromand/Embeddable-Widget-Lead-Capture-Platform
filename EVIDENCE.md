@@ -371,11 +371,79 @@ _Pending (Step 10): the same row through the dashboard API._
 
 ### 10. Burst gets 429 and normal traffic still works — Probe 3 (Step 6)
 
-_Pending: attack script output: N × 201, then 429s, then one 201._
+Step 6 (2026-11-14): `node scripts/attack.js` against `node --env-file=.env src/server.js`. 30 parallel
+valid POSTs from one IP; the per-IP limit is 10/min. The script waits for `Retry-After`, then sends one
+normal request.
+
+```
+$ node scripts/attack.js
+Burst: 30 parallel POST http://localhost:3000/submissions (widget lvuvcZeFr-42)
+Done in 358 ms. Status counts: { '201': 10, '429': 20 }
+Sample 429:
+  Retry-After: 60
+  RateLimit:   "10-in-1min"; r=0; t=60
+  Body:        {"error":{"code":"RATE_LIMITED","message":"Too many requests, try again later"}}
+Waiting 61 s for the window to reset...
+Normal request after the window: 201 {"id":"b913cd09-b137-4469-8ffe-e0ec8b0597f1","createdAt":"2026-11-13T23:41:04.860Z"}
+PASS
+exit code: 0
+```
+
+The limiter runs before body parsing and before the database. Order in `src/http/routes/submissions.js`:
+CORS/preflight → per-IP (10/min) → 415 → `express.json` (10kb) → per-widget (100/min) → validate → DB.
+Also checked (2026-11-14, in-process probe): after the per-IP limit, a `text/plain` POST also gets 429,
+a preflight still gets 204, and the 429 carries `Access-Control-Allow-Origin: *`. The per-widget limiter
+alone: 105 × one real id → 100 × 201, 5 × 429; 300 × made-up 9kb ids share one bucket → 100 × 201, 200 × 429.
 
 ### 11. One spam control blocks a spammer — Probe 6 (Step 6)
 
-_Pending: honeypot-filled POST is dropped; row count unchanged._
+Step 6 (2026-11-14): a POST with the hidden `website` field filled. The bot gets the same 201 shape as
+a real submission; no row is stored; one log line counts the hit (no IP, no field value).
+
+```
+$ psql: rows before
+ rows
+------
+   39
+(1 row)
+
+$ curl -i -X POST http://localhost:3000/submissions --data-binary @honeypot.json
+  body: {"widgetId":"lvuvcZeFr-42","fields":{"email":"bot@example.com"},"website":"http://spam.example"}
+HTTP/1.1 201 Created
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Idempotency-Key
+Access-Control-Max-Age: 7200
+RateLimit: "10-in-1min"; r=9; t=60
+RateLimit: "100-in-1min"; r=99; t=60
+Content-Type: application/json; charset=utf-8
+
+{"id":"d26981d8-69f4-495a-90aa-bdf1cc8cec6b","createdAt":"2026-11-13T23:41:33.867Z"}
+$ psql: rows after
+ rows
+------
+   39
+(1 row)
+
+$ server log (honeypot line)
+{"level":30,"time":1794613293866,"pid":31456,"hostname":"DESKTOP-742LDT7","event":"honeypot_hit","widgetId":"lvuvcZeFr-42","msg":"Honeypot filled; submission dropped"}
+```
+
+The query was `SELECT count(*) AS rows FROM submissions s JOIN widgets w ON w.id = s.widget_id WHERE w.public_id = 'lvuvcZeFr-42';`.
+The check runs after validation, so a bot gets the same 404/422 as anyone else. Every filled value is
+caught, never a 422 (probe against the DB, rows added per request):
+
+```
+1. real visitor, website ""              201 rows +1
+2. real visitor, no website key          201 rows +1
+3. bot: website "http://spam"            201 rows +0
+4. bot: website 300 chars                201 rows +0
+5. bot: website 123                      201 rows +0
+6. bot: website "   "                    201 rows +0
+7. bot: website null                     201 rows +0
+8. bot + invalid email (expect 422)      422 rows +0
+9. bot + unknown widget (expect 404)     404 rows +0
+```
 
 ### 12. Provider A down, provider B enriches — Probe 4 (Step 7)
 
@@ -479,7 +547,29 @@ _Pending (Step 10): EXPLAIN on dashboard queries._
 
 ### S5. Idempotency where it matters (Steps 6, 8)
 
-_Pending._
+Step 6 (2026-11-14): `Idempotency-Key` request header (a UUID, optional). The insert uses
+`ON CONFLICT (widget_id, idempotency_key) DO NOTHING` on the unique index from the submissions
+migration; a retry gets the original row back. Probe against the DB (`rows` = rows with that key):
+
+```
+1. same key twice        201 201 same id: true same createdAt: true rows: 1
+2. different key         201 new id: true rows: 1
+3. no key twice          201 201 different ids: true rows added: 2
+4. 5 parallel same key   201,201,201,201,201 distinct ids: 1 rows: 1
+   stored email for k1: visitor@example.com
+```
+
+Case 1's retry sent a different email; the original row is kept and returned. The header is validated
+before the body (zod `z.uuid()`), so a bad key can never reach the `text` column:
+
+```
+4. not a uuid              422 {"error":{"code":"VALIDATION_FAILED","message":"Request validation failed","details":[{"path":"Idempotency-Key","message":"Invalid UUID"}]}}
+5. empty header            422 (same)
+6. 2000-char header        422 (same)
+7. key in body instead     422 ... "Unrecognized key: \"idempotencyKey\""
+```
+
+_Pending (Step 8): job `singletonKey`, one email per submission._
 
 ### S6. Secrets clean (Steps 0, 2, 12)
 

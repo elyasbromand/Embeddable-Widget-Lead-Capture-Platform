@@ -22,7 +22,19 @@ _TODO (Step 12): endpoint table._
 
 ## Limitations
 
-_TODO (Step 12)._
+_Collected as they come up; finished in Step 12._
+
+- **Rate limits are in memory.** Counts reset when the server restarts and are not shared between
+  processes, so two instances would each allow the full limit. The real fix is a shared store
+  (Postgres or Redis).
+- **Per-IP limit and shared networks.** Visitors behind one IP (an office, a mobile carrier) share
+  the 10/min limit.
+- **Per-widget limit can be used against a tenant.** An attacker with many IPs can use up a widget's
+  100/min and block real visitors to that widget for the rest of the minute.
+- **Made-up widget ids.** A random id in the correct format gets its own per-widget key and reaches a
+  database lookup (then 404). Only the per-IP limit caps this.
+- **Idempotency keeps the first version.** A retry with the same key returns the original submission,
+  even if the data changed, so the widget makes a new key when the form changes.
 
 ## AI use
 

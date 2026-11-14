@@ -158,4 +158,5 @@ Update this line at each gate.
 - Step 3 done (2026-10-31): register/login (Argon2id + JWT), widget CRUD, owner-scoped queries, seed. Gate (401, cross-tenant 404) in EVIDENCE.md.
 - Step 4 done (2026-11-04): snippet, loader (300 s), hashed bundle (immutable), public config with CORS, ETag/304. Proof in EVIDENCE.md.
 - Step 5 done (2026-11-05): `POST /submissions`, CORS + preflight, 415 on all JSON routes, runtime field schema, rows tied to the widget's owner. Proof in EVIDENCE.md; browser POST pending Step 9.
-- Current step: **Step 6, abuse protection and idempotency**
+- Step 6 done (2026-11-14): per-IP (10/min) and per-widget (100/min) limits before the DB, honeypot (fake 201, no row), `Idempotency-Key` header with `ON CONFLICT`, `scripts/attack.js`. Proof in EVIDENCE.md.
+- Current step: **Step 7, geo enrichment with a fallback chain**

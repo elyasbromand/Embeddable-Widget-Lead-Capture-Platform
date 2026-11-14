@@ -55,6 +55,13 @@ export class ValidationError extends AppError {
   }
 }
 
+// The limiter sets the Retry-After header itself before it raises this.
+export class TooManyRequestsError extends AppError {
+  constructor(message = "Too many requests, try again later") {
+    super(429, "RATE_LIMITED", message);
+  }
+}
+
 export class ServiceUnavailableError extends AppError {
   constructor(message = "Service unavailable") {
     super(503, "SERVICE_UNAVAILABLE", message);

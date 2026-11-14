@@ -1,16 +1,24 @@
 import * as z from "zod";
-import { publicIdSchema } from "./widgets.js";
 
 // The envelope of POST /submissions, the same for every widget:
 //   { widgetId, fields, idempotencyKey?, website? }
 // `fields` is only checked to be an object here. Its contents depend on the widget, so they
-// are checked by buildFieldsSchema once the widget row is loaded. idempotencyKey and website are
-// used in Step 6, but a strict object must already allow them.
+// are checked by buildFieldsSchema once the widget row is loaded.
 export const submissionBodySchema = z.strictObject({
   widgetId: z.string(),
   fields: z.record(z.any()),
-  idempotencyKey: z.string().max(100).optional(),
-  website: z.string().max(200).optional(),
+  // Honeypot. Accepts ANY value so a bot never gets a 422 for it: every filled value must reach
+  // the honeypot check and get the fake 201. Never stored, so no length or NUL check is needed
+  // (the body is capped at 10kb anyway). .optional(): the key itself may be missing.
+  website: z.unknown().optional(),
+});
+
+// The Idempotency-Key request header. The widget makes one UUID per form render and resends it
+// on a retry. Optional: a client without one still works, it just gets no retry protection
+// (NULL keys never collide in the unique index). A UUID has a fixed format, so a NUL or a
+// 10kb string can never reach the text column. Wrapped in an object so a 422 names the header.
+export const idempotencyHeaderSchema = z.object({
+  "Idempotency-Key": z.uuid().optional(),
 });
 
 // Longest value we accept per field type. 254 is the longest valid email address.
