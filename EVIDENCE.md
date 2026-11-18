@@ -529,7 +529,129 @@ called, row `b0ef9116-…` stored with `ip = ::1`, `geo IS NULL = t`.
 
 ### 14. Failing email or webhook does not block the submission — Probe 5 (Step 8)
 
-_Pending: forced-failure run: 201, stored row, retry log lines._
+API started normally; worker started with `FORCE_EMAIL_FAILURE=true` (the mailer throws on every send).
+Mailpit inbox emptied first. 2026-11-18:
+
+```
+=== Probe 5: worker started with FORCE_EMAIL_FAILURE=true (API unchanged)
+$ curl -i -X POST localhost:3000/submissions -H 'Origin: http://localhost:5500' -H 'Content-Type: application/json' \
+    --data-binary '{"widgetId":"lvuvcZeFr-42","fields":{"email":"probe5@example.com","first_name":"Probe5"}}'
+HTTP/1.1 201 Created
+Access-Control-Allow-Origin: *
+{"id":"4780cbe7-aa8a-44e3-8592-359221ffcf1a","createdAt":"2026-11-18T14:25:00.125Z"}
+[HTTP 201 in 0.683323s]
+```
+
+The row is stored:
+
+```
+                  id                  |       email        |          created_at
+--------------------------------------+--------------------+-------------------------------
+ 4780cbe7-aa8a-44e3-8592-359221ffcf1a | probe5@example.com | 2026-11-18 14:25:00.125404+00
+```
+
+API error lines during the run: `0`. Mailpit total: `0` (nothing was sent).
+Retries, dead letter and alert: see S3.
+
+### Phase 2 gate (brief): Steps 5–8 together
+
+One sweep on 2026-11-18 19:08 (run tag `190820`), real providers, Mailpit emptied first. The API is restarted
+between groups because the per-IP limit (10/min) is per process. `.env` has `GEO_TEST_IP=8.8.8.8`.
+
+```
+=== Part 1. Cross-origin POST with the test IP override (GEO_TEST_IP=8.8.8.8)
+--- preflight
+HTTP/1.1 204 No Content
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Idempotency-Key
+Access-Control-Max-Age: 7200
+--- valid submission
+valid, cross-origin                201  CORS ok  {"id":"9b88da36-7921-4fd6-9b13-65a8166c4088","createdAt":"2026-11-18T14:38:27.339Z"}
+
+=== Probe 2. Bad input gets 4xx JSON with CORS, never 500
+malformed JSON                     400  CORS ok  {"error":{"code":"BAD_REQUEST","message":"Malformed JSON body"}}
+11 kB body                         413  CORS ok  {"error":{"code":"PAYLOAD_TOO_LARGE","message":"Request body is too large"}}
+text/plain content type            415  CORS ok  {"error":{"code":"UNSUPPORTED_MEDIA_TYPE","message":"Content-Type must be application/json"}}
+invalid email field                422  CORS ok  {"error":{"code":"VALIDATION_FAILED","message":"Request validation failed","details":[{"path":"email","message":"Invalid email address"}]}}
+unknown widget                     404  CORS ok  {"error":{"code":"NOT_FOUND","message":"Widget not found"}}
+
+=== Probe 6. Honeypot filled: fake 201, no row
+honeypot website="http://spam"     201  CORS ok  {"id":"f219b1ae-a102-4832-b811-ae7154f27889","createdAt":"2026-11-18T14:38:28.531Z"}
+rows before 52, after 52
+
+=== Probe 3. Burst from one IP (scripts/attack.js, fresh API)
+Burst: 30 parallel POST http://localhost:3000/submissions (widget lvuvcZeFr-42)
+Done in 1773 ms. Status counts: { '201': 10, '429': 20 }
+Sample 429:
+  Retry-After: 60
+  RateLimit:   "10-in-1min"; r=0; t=60
+  Body:        {"error":{"code":"RATE_LIMITED","message":"Too many requests, try again later"}}
+Waiting 61 s for the window to reset...
+Normal request after the window: 201 {"id":"920f9a3b-0fa1-4445-9c92-620190b2a733","createdAt":"2026-11-18T14:39:35.603Z"}
+PASS
+
+=== Probe 4. Geo fallback (fresh API per run, GEO_TEST_IP=8.8.8.8)
+A down (ip-api.com)                201  CORS ok  {"id":"c9c8b56b-91bd-4b28-b4cb-115397471802","createdAt":"2026-11-18T14:39:39.480Z"}
+both down                          201  CORS ok  {"id":"720afe12-49cc-47f7-a068-e395ab2c4229","createdAt":"2026-11-18T14:39:41.879Z"}
+
+=== Probe 5. Worker with FORCE_EMAIL_FAILURE=true
+email forced to fail               201  CORS ok  {"id":"d610fced-e026-483a-bccb-bfc560e975a3","createdAt":"2026-11-18T14:39:54.567Z"}
+  19:09:55  attempt 1  Confirmation email failed; will retry
+  19:09:59  attempt 2  Confirmation email failed; will retry
+  19:10:05  attempt 3  Confirmation email failed; will retry
+  19:10:15  attempt 4  Confirmation email failed; will retry
+  19:10:17             ALERT confirmation email gave up after all retries (submission d610fced-e026-483a-bccb-bfc560e975a3)
+
+=== Stored rows for this run
+              email               |                            geo                             | geo_null
+----------------------------------+------------------------------------------------------------+----------
+ gate-190820@example.com          | {"city": "Ashburn", "region": "Virginia", "country": "US"} | f
+ gate-adown-190820@example.com    |                                                            | t
+ gate-bothdown-190820@example.com |                                                            | t
+ gate-mailfail-190820@example.com | {"city": "Ashburn", "region": "Virginia", "country": "US"} | f
+
+=== Jobs for this run
+              email               |         queue          |   state   | retry_count
+----------------------------------+------------------------+-----------+-------------
+ gate-190820@example.com          | confirmation-email     | completed |           0
+ gate-adown-190820@example.com    | confirmation-email     | completed |           0
+ gate-bothdown-190820@example.com | confirmation-email     | completed |           0
+ gate-mailfail-190820@example.com | confirmation-email     | failed    |           3
+ gate-mailfail-190820@example.com | confirmation-email-dlq | completed |           0
+
+=== Mailpit
+total: 14
+  to gate-bothdown-190820@example.com
+  to gate-adown-190820@example.com
+  to gate-190820@example.com
+  attack-*: 11   bot-*: 0   mailfail: 0
+=== API logs: error-level lines (level 50) across all runs
+count: 0
+=== Raw IPs in any API or worker log line
+0
+```
+
+**Probe 4a failed in this sweep, then passed on a rerun.** The "A down" row has `geo = NULL` because the
+backup provider failed too. API log of that run:
+
+```
+{"level":40,"provider":"ip-api.com","error":"ip-api.com forced down (GEO_FORCE_DOWN)","msg":"Geo provider failed"}
+{"level":40,"provider":"ipapi.co","error":"The operation was aborted due to timeout","msg":"Geo provider failed"}
+```
+
+ipapi.co took longer than the 1.5 s timeout, and a direct call right after returned `HTTP 429` (its free
+tier throttles; it had been called many times that day). The pipeline behaved as designed (both failed →
+`NULL`, still 201), but this run does not show B enriching. Rerun of 4a alone, fresh API, 19:10:57:
+
+```
+=== Probe 4a rerun 1 (GEO_FORCE_DOWN=ip-api.com) 19:10:57
+{"id":"04d3278f-d2ac-4e0a-b550-b8b15f5e6cd6","createdAt":"2026-11-18T14:40:58.113Z"}  -> HTTP 201 in 0.978079s
+  {"level":40,"provider":"ip-api.com","error":"ip-api.com forced down (GEO_FORCE_DOWN)","msg":"Geo provider failed"}
+  stored geo: {"city": "Mountain View", "region": "California", "country": "US"}
+```
+
+Not in this gate: the browser POST from the :5500 page (Step 9, row 7) and the dashboard read (Step 10).
 
 ### 15. Owner dashboard: submissions and basic analytics (Step 10)
 
@@ -585,7 +707,42 @@ _Pending (Step 5): malformed, oversized, wrong content type, invalid fields._
 
 ### S3. Background job with retries and a failure alert (Step 8)
 
-_Pending._
+Worker log for the Probe 5 job (pino JSON, shown as local time · level · attempt · message):
+
+```
+18:54:56.460  level 30              Worker started
+18:55:00.515  level 40  attempt 1  Confirmation email failed; will retry | Email sending forced to fail (FORCE_EMAIL_FAILURE)
+18:55:04.511  level 40  attempt 2  Confirmation email failed; will retry | Email sending forced to fail (FORCE_EMAIL_FAILURE)
+18:55:12.546  level 40  attempt 3  Confirmation email failed; will retry | Email sending forced to fail (FORCE_EMAIL_FAILURE)
+18:55:28.606  level 40  attempt 4  Confirmation email failed; will retry | Email sending forced to fail (FORCE_EMAIL_FAILURE)
+18:55:30.611  level 50  alert=true  ALERT confirmation email gave up after all retries (submission 4780cbe7-aa8a-44e3-8592-359221ffcf1a)
+```
+
+The job ended in the dead-letter queue (`pgboss.job`):
+
+```
+         queue          |   state   | retry_count | retry_limit |            submission_id
+------------------------+-----------+-------------+-------------+--------------------------------------
+ confirmation-email     | failed    |           3 |           3 | 4780cbe7-aa8a-44e3-8592-359221ffcf1a
+ confirmation-email-dlq | completed |           0 |           2 | 4780cbe7-aa8a-44e3-8592-359221ffcf1a
+```
+
+Queue policy (`src/jobs/queues.js`): `retryLimit: 3, retryDelay: 2, retryBackoff: true, retryDelayMax: 60,
+deadLetter: "confirmation-email-dlq"`, stored on the job as `retry_delay 2 | retry_backoff t | retry_delay_max 60`.
+
+Gaps between attempts were 4 s, 8 s, 16 s. pg-boss schedules each retry at
+`retryDelay * (2^n/2 + 2^n/2 * random())`, and the worker polls every 2 s (pg-boss default), so a due time is
+rounded up to the next poll. Jitter checked separately: 5 jobs failed together were scheduled
+`3.87 s`, `5.65 s` and `6.38 s` out (the remaining two had not been fetched yet); test jobs deleted afterwards.
+
+Happy path, worker without the flag (Mailpit inbox emptied first):
+
+```
+--- 1. one submission
+{"id":"125c85f5-f25f-4865-871c-2647677f7949","createdAt":"2026-11-18T14:15:14.208Z"}  -> HTTP 201 in 0.851581s
+worker: {"jobId":"125c85f5-…","submissionId":"125c85f5-…","attempt":1,"status":"sent","messageId":"<65ad2bb1-…@example.test>","msg":"Confirmation email job done"}
+mailpit: to step8-visitor@example.com | We received your message: Monthly newsletter
+```
 
 ### S4. Real persistence: migrations, right indexes, isolated tenants (Steps 2, 3, 10)
 
@@ -643,7 +800,32 @@ before the body (zod `z.uuid()`), so a bad key can never reach the `text` column
 7. key in body instead     422 ... "Unrecognized key: \"idempotencyKey\""
 ```
 
-_Pending (Step 8): job `singletonKey`, one email per submission._
+One email per submission (Step 8). The job id is the submission id (`boss.send(..., { id: submission.id })`).
+The plan said `singletonKey`, but on pg-boss 12's default `standard` queue it does not deduplicate. Checked:
+
+```
+singletonKey, 1st: 1190346f-a59e-4674-8706-b49f3816bdd6
+singletonKey, 2nd: 4dbd4ab1-281c-48a6-bb85-08d7c9d89f28     <- second job created
+id,           1st: 72c60112-ab11-4ba6-a89e-8a8f1f843178
+id,           2nd: null                                     <- refused
+```
+
+Same `Idempotency-Key` sent twice through the API, with the worker running:
+
+```
+--- 2. same Idempotency-Key sent twice (46e638a4-a3f1-4c6d-a1ad-5eb0eaf3299a)
+{"id":"c25e30a5-afe2-4a73-80bd-275111590daf","createdAt":"2026-11-18T14:15:14.620Z"}  -> HTTP 201
+{"id":"c25e30a5-afe2-4a73-80bd-275111590daf","createdAt":"2026-11-18T14:15:14.620Z"}  -> HTTP 201
+
+mailpit total: 2   (one per submission; the retry added none)
+  to step8-retry@example.com   | We received your message: Monthly newsletter
+  to step8-visitor@example.com | We received your message: Monthly newsletter
+
+           email           | jobs |   state
+---------------------------+------+-----------
+ step8-retry@example.com   |    1 | completed
+ step8-visitor@example.com |    1 | completed
+```
 
 ### S6. Secrets clean (Steps 0, 2, 12)
 

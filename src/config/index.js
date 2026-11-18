@@ -31,6 +31,13 @@ const envSchema = z.object({
     .default("")
     .transform((list) => list.split(",").map((name) => name.trim()).filter(Boolean))
     .pipe(z.array(z.enum(["ip-api.com", "ipapi.co"], { error: "GEO_FORCE_DOWN names must be ip-api.com or ipapi.co" }))),
+  // Mail (Step 8). Locally Mailpit catches everything on port 1025; nothing leaves the machine.
+  SMTP_HOST: z.string().min(1).default("localhost"),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(1025),
+  MAIL_FROM: z.email(),
+  // Fault injection: the mailer throws on every send, to prove retries and the dead-letter queue.
+  // stringbool: "true"/"1"/"yes"/"on" -> true, "false"/"0"/"no"/"off" -> false, anything else fails.
+  FORCE_EMAIL_FAILURE: z.stringbool().default(false),
 }).refine((env) => !(env.NODE_ENV === "production" && env.GEO_TEST_IP), {
   // A fake visitor location must never reach production data.
   message: "GEO_TEST_IP must be empty when NODE_ENV=production",
@@ -39,6 +46,9 @@ const envSchema = z.object({
   // A forgotten test flag must not silently switch off geo in production.
   message: "GEO_FORCE_DOWN must be empty when NODE_ENV=production",
   path: ["GEO_FORCE_DOWN"],
+}).refine((env) => !(env.NODE_ENV === "production" && env.FORCE_EMAIL_FAILURE), {
+  message: "FORCE_EMAIL_FAILURE must be false when NODE_ENV=production",
+  path: ["FORCE_EMAIL_FAILURE"],
 });
 
 const result = envSchema.safeParse(process.env);

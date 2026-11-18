@@ -37,3 +37,17 @@ export async function insertSubmission({ widgetId, ownerId, data, ip, geo, idemp
   }
   return existing.rows[0];
 }
+
+// For the email worker. Not owner-scoped on purpose: the id comes from a job our own API created
+// after the insert, never from a request. Returns the widget's fields too, so the worker can find
+// which answer is the visitor's email address.
+export async function findSubmissionForEmail(submissionId) {
+  const result = await pool.query(
+    `SELECT s.id, s.data, w.title AS "widgetTitle", w.fields AS "widgetFields"
+     FROM submissions s
+     JOIN widgets w ON w.id = s.widget_id
+     WHERE s.id = $1`,
+    [submissionId]
+  );
+  return result.rows[0] ?? null;
+}

@@ -160,4 +160,5 @@ Update this line at each gate.
 - Step 5 done (2026-11-05): `POST /submissions`, CORS + preflight, 415 on all JSON routes, runtime field schema, rows tied to the widget's owner. Proof in EVIDENCE.md; browser POST pending Step 9.
 - Step 6 done (2026-11-14): per-IP (10/min) and per-widget (100/min) limits before the DB, honeypot (fake 201, no row), `Idempotency-Key` header with `ON CONFLICT`, `scripts/attack.js`. Proof in EVIDENCE.md.
 - Step 7 done (2026-11-18): geo chain (ip-api.com → ipapi.co, 1.5 s each, `null` on failure), private IPs skipped, `GEO_TEST_IP` / `GEO_FORCE_DOWN`, vitest (43 tests). Probe 4 proof in EVIDENCE.md.
-- Current step: **Step 8, background job and safe side effects**
+- Step 8 done (2026-11-18): pg-boss worker (`npm run worker`), enqueue after insert (`id: submissionId`, failure logged, still 201), 3 retries with backoff + jitter, dead-letter queue + ALERT, `FORCE_EMAIL_FAILURE`. Probe 5 proof in EVIDENCE.md.
+- Current step: **Step 9, second-origin test page and the real widget**

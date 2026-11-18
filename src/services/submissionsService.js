@@ -8,6 +8,8 @@ import { publicIdSchema } from "../http/schemas/widgets.js";
 import { logger } from "../logger.js";
 import { geoService } from "./geoService.js";
 import { config } from "../config/index.js";
+import { boss } from "../jobs/producer.js";
+import { CONFIRMATION_EMAIL } from "../jobs/queues.js";
 
 // The real widget sends the hidden `website` input as "" or leaves it out. Any other value
 // (text, spaces, a number, null) can only come from something that filled a field no human sees.
@@ -48,6 +50,17 @@ export async function createSubmission({ widgetId, fields, ip, website, idempote
     geo,
     idempotencyKey,
   });
+
+  // After the insert has committed, so the worker can always load the row it is told about.
+  // Only the id goes in the job: no personal data copied into pg-boss's table.
+  // `id: submission.id` makes a second send for the same submission (an Idempotency-Key retry)
+  // return null instead of queueing a second email. singletonKey would not dedupe on a standard queue.
+  // Email is a side effect: a failed enqueue is logged and the visitor still gets 201.
+  try {
+    await boss.send(CONFIRMATION_EMAIL, { submissionId: submission.id }, { id: submission.id });
+  } catch (err) {
+    logger.error({ submissionId: submission.id, error: err.message }, "Could not enqueue confirmation email");
+  }
 
   return submission;
 }
