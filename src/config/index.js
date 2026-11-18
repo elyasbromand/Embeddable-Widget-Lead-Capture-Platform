@@ -18,6 +18,27 @@ const envSchema = z.object({
     .transform((url) => url.replace(/\/+$/, "")),
   // HS256 key. Short or guessable secrets can be brute-forced offline from any token we issue.
   JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
+  // Dev only: geo looks up this IP instead of the visitor's (locally every visitor is 127.0.0.1).
+  // `GEO_TEST_IP=` in .env arrives as "", which means "not set", so it becomes undefined first.
+  GEO_TEST_IP: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.union([z.ipv4(), z.ipv6()], { error: "GEO_TEST_IP must be an IPv4 or IPv6 address" }).optional()
+  ),
+  // Fault injection: comma-separated provider names that throw instead of calling the network,
+  // e.g. "ip-api.com" (A down) or "ip-api.com,ipapi.co" (both down). Empty = off.
+  GEO_FORCE_DOWN: z
+    .string()
+    .default("")
+    .transform((list) => list.split(",").map((name) => name.trim()).filter(Boolean))
+    .pipe(z.array(z.enum(["ip-api.com", "ipapi.co"], { error: "GEO_FORCE_DOWN names must be ip-api.com or ipapi.co" }))),
+}).refine((env) => !(env.NODE_ENV === "production" && env.GEO_TEST_IP), {
+  // A fake visitor location must never reach production data.
+  message: "GEO_TEST_IP must be empty when NODE_ENV=production",
+  path: ["GEO_TEST_IP"],
+}).refine((env) => !(env.NODE_ENV === "production" && env.GEO_FORCE_DOWN.length > 0), {
+  // A forgotten test flag must not silently switch off geo in production.
+  message: "GEO_FORCE_DOWN must be empty when NODE_ENV=production",
+  path: ["GEO_FORCE_DOWN"],
 });
 
 const result = envSchema.safeParse(process.env);

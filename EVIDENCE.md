@@ -447,11 +447,85 @@ caught, never a 422 (probe against the DB, rows added per request):
 
 ### 12. Provider A down, provider B enriches — Probe 4 (Step 7)
 
-_Pending: test name and output; stored row has geo from B._
+Unit tests: providers are injected mocks (`src/integrations/geo/mockProvider.js`), no network.
+`npm test` (verbose reporter), 2026-11-18:
+
+```
+ ✓ test/geoService.test.js > geoService.lookup > falls back to B when A is down
+ ✓ test/geoService.test.js > geoService.lookup > uses A when A is up and never calls B
+ ✓ test/geoService.test.js > geoService.lookup > times out a slow A and falls back to B
+ ✓ test/geoService.test.js > geoService.lookup > gives each provider its own timeout budget (one shared signal would fail B too)
+ ✓ test/geoService.test.js > geoService.lookup > logs each failure as a warning with the provider name and reason, never the IP
+ Test Files  4 passed (4)
+      Tests  43 passed (43)
+```
+
+Live server, real providers. `GEO_TEST_IP=8.8.8.8` (dev override: locally the visitor is `::1`),
+`GEO_FORCE_DOWN` makes the named provider throw without calling the network. Fresh server per run.
+
+```
+=== Baseline: both providers up  (GEO_FORCE_DOWN='')
+$ curl -i -X POST localhost:3000/submissions -H 'Origin: http://localhost:5500' -H 'Content-Type: application/json' \
+    --data-binary '{"widgetId":"lvuvcZeFr-42","fields":{"email":"probe4-up@example.com","first_name":"Probe4"}}'
+HTTP/1.1 201 Created
+Access-Control-Allow-Origin: *
+{"id":"115cea3a-dca0-4134-aaed-80cadae09d05","createdAt":"2026-11-18T11:48:06.965Z"}
+[HTTP 201 in 0.651892s]
+server log (geo lines): none
+
+=== Probe 4a: provider A down  (GEO_FORCE_DOWN='ip-api.com')
+$ curl -i -X POST ... '{"widgetId":"lvuvcZeFr-42","fields":{"email":"probe4-a-down@example.com",...}}'
+HTTP/1.1 201 Created
+Access-Control-Allow-Origin: *
+{"id":"a588f1b8-51ad-4c28-8941-7ec966cf526c","createdAt":"2026-11-18T11:48:10.709Z"}
+[HTTP 201 in 1.105510s]
+server log (geo lines):
+  {"level":40,...,"provider":"ip-api.com","error":"ip-api.com forced down (GEO_FORCE_DOWN)","msg":"Geo provider failed"}
+  lines in log containing an IP: 0
+```
+
+Stored rows (A's answer is Ashburn, B's is Mountain View, so 4a was enriched by B):
+
+```
+            email             |    widget    |                                geo                                 | geo_is_sql_null
+------------------------------+--------------+--------------------------------------------------------------------+-----------------
+ probe4-up@example.com        | lvuvcZeFr-42 | {"city": "Ashburn", "region": "Virginia", "country": "US"}         | f
+ probe4-a-down@example.com    | lvuvcZeFr-42 | {"city": "Mountain View", "region": "California", "country": "US"} | f
+```
 
 ### 13. All providers down, submission still stored without geo — Probe 4 (Step 7)
 
-_Pending: test output; stored row with null geo._
+Unit test (written first, before `geoService` existed):
+
+```
+ ✓ test/geoService.test.js > geoService.lookup > returns null (and does not throw) when every provider is down
+```
+
+Live server, both forced down:
+
+```
+=== Probe 4b: both providers down  (GEO_FORCE_DOWN='ip-api.com,ipapi.co')
+$ curl -i -X POST ... '{"widgetId":"lvuvcZeFr-42","fields":{"email":"probe4-both-down@example.com",...}}'
+HTTP/1.1 201 Created
+Access-Control-Allow-Origin: *
+{"id":"95e1f0a7-dc89-4c5f-8034-af73f1e5b69c","createdAt":"2026-11-18T11:48:13.404Z"}
+[HTTP 201 in 0.055043s]
+server log (geo lines):
+  {"level":40,...,"provider":"ip-api.com","error":"ip-api.com forced down (GEO_FORCE_DOWN)","msg":"Geo provider failed"}
+  {"level":40,...,"provider":"ipapi.co","error":"ipapi.co forced down (GEO_FORCE_DOWN)","msg":"Geo provider failed"}
+  lines in log containing an IP: 0
+```
+
+Stored row: `geo` is SQL `NULL` (not the JSON value `null`), so `WHERE geo IS NULL` finds it:
+
+```
+            email             |    widget    | geo | geo_is_sql_null
+------------------------------+--------------+-----+-----------------
+ probe4-both-down@example.com | lvuvcZeFr-42 |     | t
+```
+
+Private visitor IP without the override (`GEO_TEST_IP` empty, visitor `::1`): `201 in 0.045717s`, no provider
+called, row `b0ef9116-…` stored with `ip = ::1`, `geo IS NULL = t`.
 
 ### 14. Failing email or webhook does not block the submission — Probe 5 (Step 8)
 

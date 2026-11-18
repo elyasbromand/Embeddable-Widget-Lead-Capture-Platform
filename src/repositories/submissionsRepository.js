@@ -9,13 +9,16 @@ import { pool } from "./db.js";
 // No key (NULL) never conflicts, so every request without one gets its own row.
 // A retry gets the ORIGINAL row back, even if its data differs, so the widget must make a new key
 // whenever the visitor changes the form (Step 9).
-export async function insertSubmission({ widgetId, ownerId, data, ip, idempotencyKey }) {
+//
+// geo: SQL NULL when no provider answered, never the JSON value null. JSON.stringify(null) is the
+// string "null", which Postgres would store as a JSON null that `WHERE geo IS NULL` does not find.
+export async function insertSubmission({ widgetId, ownerId, data, ip, geo, idempotencyKey }) {
   const inserted = await pool.query(
-    `INSERT INTO submissions (widget_id, owner_id, data, ip, idempotency_key)
-     VALUES ($1, $2, $3::jsonb, $4, $5)
+    `INSERT INTO submissions (widget_id, owner_id, data, ip, idempotency_key, geo)
+     VALUES ($1, $2, $3::jsonb, $4, $5, $6::jsonb)
      ON CONFLICT (widget_id, idempotency_key) DO NOTHING
      RETURNING id, created_at AS "createdAt"`,
-    [widgetId, ownerId, JSON.stringify(data), ip, idempotencyKey]
+    [widgetId, ownerId, JSON.stringify(data), ip, idempotencyKey, geo ? JSON.stringify(geo) : null]
   );
   if (inserted.rows[0]) return inserted.rows[0];
 

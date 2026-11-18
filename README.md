@@ -31,6 +31,13 @@ _Collected as they come up; finished in Step 12._
   the 10/min limit.
 - **Per-widget limit can be used against a tenant.** An attacker with many IPs can use up a widget's
   100/min and block real visitors to that widget for the rest of the minute.
+- **Geo is an estimate, and the free tiers are small.** The two providers disagree for the same IP
+  (8.8.8.8: Ashburn vs Mountain View). ip-api.com's free tier is HTTP only (the visitor IP crosses the
+  network unencrypted) and allows 45 lookups a minute; ipapi.co allows about 1,000 a day. Above that
+  they answer 429, the chain falls through, and rows are stored with `geo = NULL`. There is no
+  per-IP cache and no backfill job yet (both optional in the plan).
+- **Geo adds latency to the submission.** The lookup runs before the insert: about 0.3–1 s normally,
+  up to 1.5 s per provider when one hangs (3 s worst case with both).
 - **Made-up widget ids.** A random id in the correct format gets its own per-widget key and reaches a
   database lookup (then 404). Only the per-IP limit caps this.
 - **Idempotency keeps the first version.** A retry with the same key returns the original submission,
