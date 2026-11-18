@@ -20,7 +20,8 @@ export function createEmailService({ findSubmissionForEmail, mailer }) {
       const { messageId } = await mailer.send({
         to,
         subject: `We received your message: ${submission.widgetTitle}`,
-        text: `Thanks! Your submission to "${submission.widgetTitle}" was received.\n\nReference: ${submission.id}`,
+        // No submission id in the body: it is our internal key and the visitor has no use for it.
+        text: `Thanks! Your submission to "${submission.widgetTitle}" was received.`,
       });
       return { status: "sent", messageId };
     },
