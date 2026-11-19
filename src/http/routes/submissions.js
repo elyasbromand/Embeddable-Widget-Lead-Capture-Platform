@@ -13,6 +13,7 @@ submissionsRouter.use((req, res, next) => {
   res.set("Access-Control-Allow-Origin", "*");
   res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.set("Access-Control-Allow-Headers", "Content-Type, Idempotency-Key");
+  res.set("Access-Control-Expose-Headers", "Retry-After");
   res.set("Access-Control-Max-Age", "7200"); // the preflight can be cached for 2 hrs, so the browser doesn't repeat it for every submission.
 
   if (req.method === "OPTIONS") {

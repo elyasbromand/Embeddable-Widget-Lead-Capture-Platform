@@ -127,7 +127,7 @@ npm run seed                # two demo tenants with a widget each
 npm run dev                 # builds the widget, then API on http://localhost:3000 (auto-restart; `npm start` without)
 npm run worker              # pg-boss worker (email jobs)
 npm run build:widget        # esbuild → dist/widget.<hash>.js + manifest
-npx serve test-site -l 5500 # second-origin test page
+npm run test-site           # second-origin test page on http://localhost:5500
 npm test                    # vitest (loads .env), single command for the whole suite
 node scripts/attack.js      # rate-limit burst probe
 ```
@@ -161,4 +161,5 @@ Update this line at each gate.
 - Step 6 done (2026-11-14): per-IP (10/min) and per-widget (100/min) limits before the DB, honeypot (fake 201, no row), `Idempotency-Key` header with `ON CONFLICT`, `scripts/attack.js`. Proof in EVIDENCE.md.
 - Step 7 done (2026-11-18): geo chain (ip-api.com → ipapi.co, 1.5 s each, `null` on failure), private IPs skipped, `GEO_TEST_IP` / `GEO_FORCE_DOWN`, vitest (43 tests). Probe 4 proof in EVIDENCE.md.
 - Step 8 done (2026-11-18): pg-boss worker (`npm run worker`), enqueue after insert (`id: submissionId`, failure logged, still 201), 3 retries with backoff + jitter, dead-letter queue + ALERT, `FORCE_EMAIL_FAILURE`. Probe 5 proof in EVIDENCE.md.
-- Current step: **Step 9, second-origin test page and the real widget**
+- Step 9 done (2026-11-19): real widget (shadow DOM, `textContent` only, honeypot, `Idempotency-Key` per form version), hostile-CSS test site on :5500, `Retry-After` exposed via CORS. Browser gate proof in EVIDENCE.md rows 6–7.
+- Current step: **Step 10, owner dashboard**

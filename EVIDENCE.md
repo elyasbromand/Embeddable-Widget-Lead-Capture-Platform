@@ -270,7 +270,29 @@ lvuvcZeFr-42 loaded (bundle stub; the form arrives in Step 9).</div>
 
 ### 6. Widget renders on a different origin (Step 9)
 
-_Pending: browser console and page on :5500 calling the API on :3000._
+Step 9 (2026-11-18/19). `npm run test-site` serves `test-site/index.html` on `http://localhost:5500`.
+That page has only the one-line snippet, plus deliberately hostile CSS: crimson `!important` text and
+Comic Sans 40px on every element. The API runs on `http://localhost:3000`.
+
+Seen in the browser (Chrome DevTools, Network tab). The screenshots were checked during the session
+and not kept; this is a transcription:
+
+- `widget.js?id=lvuvcZeFr-42` → the loader, then `widget.TIEQGPRQ.js` (the current hashed bundle).
+- `GET /widgets/lvuvcZeFr-42/config` → **200** with `Access-Control-Allow-Origin: *` and
+  `Cache-Control: public, max-age=60`.
+- The form ("Monthly newsletter", Email *, First name, Subscribe) renders in the widget's own fonts and
+  colours, while the page text around it is crimson serif. The host page's CSS does not reach inside
+  the shadow root.
+
+No HTML sinks in the widget source. The only matches are the two comments that forbid `innerHTML`:
+
+```
+$ grep -nE "innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(|new Function" widget/src/index.js
+2://  - never put tenant- or visitor-written text into HTML (textContent only, no innerHTML)
+42:  if (text != null) node.textContent = text; // never innerHTML: "<img onerror=...>" stays text
+$ grep -c textContent widget/src/index.js
+6
+```
 
 ### 7. Cross-origin submit works; preflight handled (Step 5)
 
@@ -285,7 +307,51 @@ Access-Control-Allow-Headers: Content-Type, Idempotency-Key
 Access-Control-Max-Age: 7200
 ```
 
-_Pending (Step 9): a real browser POST from the second origin, with the `OPTIONS` row visible in DevTools._
+Step 9 (2026-11-18/19): a real browser on `http://localhost:5500` submitting through the widget.
+DevTools Network tab, transcribed from screenshots checked during the session (not kept):
+
+| Action in the widget | Request | Status | What the widget showed |
+| --- | --- | --- | --- |
+| Submit a valid form | `OPTIONS /submissions` (preflight) | **204**, all four `Access-Control-*` headers | |
+| | `POST /submissions` | **201**, `Access-Control-Allow-Origin: *` | "Thanks! Your message was sent." |
+| Submit `Email` as not-an-email | `POST /submissions` | **422** | "Invalid email address" under the Email field |
+| Keep submitting past 10/min | `POST /submissions` | **429**, `Retry-After` | "Too many attempts. Please try again in 60 seconds." |
+
+**Bug found by the 429 test.** `Retry-After` is not a CORS-safelisted response header, so the widget's
+`response.headers.get("Retry-After")` returned `null`, and the message always fell back to 60.
+DevTools showed the header because DevTools is not bound by CORS. The fix is
+`Access-Control-Expose-Headers: Retry-After` in the submissions CORS middleware. After the fix, the same
+test on 2026-11-19 showed **"Please try again in 32 seconds."**, with DevTools showing
+`429 Too Many Requests` and `Access-Control-Expose-Headers: Retry-After`. The 32 is the time left
+in the fixed 60 s window.
+
+Preflight after the fix:
+
+```
+$ curl -s -i -X OPTIONS localhost:3000/submissions -H "Origin: http://localhost:5500" -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: content-type,idempotency-key" | grep -E "^HTTP|^Access"
+HTTP/1.1 204 No Content
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Idempotency-Key
+Access-Control-Expose-Headers: Retry-After
+Access-Control-Max-Age: 7200
+```
+
+The first browser row in the database. The visitor's email is redacted here because it is a real
+address. `has_key = t` means the widget sent its `Idempotency-Key`:
+
+```
+$ docker compose exec -T postgres psql -U app -d widgets -c "SELECT id, widget_id, regexp_replace(data->>'email','^(.).*@.*$','\1…@…') AS email, idempotency_key IS NOT NULL AS has_key, geo IS NULL AS geo_null, created_at FROM submissions WHERE created_at >= '2026-11-18 20:00+00' ORDER BY created_at"
+                  id                  |              widget_id               | email | has_key | geo_null |          created_at
+--------------------------------------+--------------------------------------+-------+---------+----------+-------------------------------
+ ef3b8fec-55ad-4bfa-a73f-2fc462fd4cef | 55adb0cb-efd9-4bf4-9028-ba7626dd9b95 | e…@…  | t       | t        | 2026-11-18 20:33:27.233852+00
+ ...
+(28 rows)
+```
+
+18 of those 28 rows have a key, so they came from the widget. The 10 rows without a key came from
+scripted requests. The first row's `geo` is NULL, which is the designed degradation. The later widget
+rows have geo, through `GEO_TEST_IP`.
 
 ### 8. Malformed and oversized payloads rejected with 4xx JSON — Probe 2 (Step 5)
 

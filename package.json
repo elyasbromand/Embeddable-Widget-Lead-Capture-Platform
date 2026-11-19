@@ -16,7 +16,8 @@
     "build:widget": "node scripts/build-widget.js",
     "test": "node --env-file=.env node_modules/vitest/vitest.mjs run",
     "migrate": "node --env-file=.env node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations",
-    "worker": "node --env-file=.env src/jobs/worker.js"
+    "worker": "node --env-file=.env src/jobs/worker.js",
+    "test-site": "npx --yes serve test-site -l 5500"
   },
   "repository": {
     "type": "git",
