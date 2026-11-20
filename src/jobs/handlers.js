@@ -1,4 +1,4 @@
-import { CONFIRMATION_EMAIL, CONFIRMATION_EMAIL_DLQ } from "./queues.js";
+import { CONFIRMATION_EMAIL, CONFIRMATION_EMAIL_DLQ, IP_RETENTION, IP_RETENTION_CRON, IP_RETENTION_DAYS } from "./queues.js";
 
 // The worker's job handlers, separate from worker.js (which starts the process) so a test can
 // register them on a pg-boss instance with a failing email service and watch the retries happen.
@@ -25,4 +25,14 @@ export async function registerEmailWorkers(boss, { emailService, logger, workOpt
       `ALERT confirmation email gave up after all retries (submission ${job.data.submissionId})`
     );
   });
+}
+
+// Raw-IP retention. boss.schedule stores the cron in Postgres, so it runs once a day however many
+// workers there are, and survives restarts. Only the count is logged, never an address.
+export async function registerRetentionWorker(boss, { clearExpiredIps, logger, days = IP_RETENTION_DAYS }) {
+  await boss.work(IP_RETENTION, async () => {
+    const cleared = await clearExpiredIps(days);
+    logger.info({ cleared, days }, "Raw IPs older than the retention period cleared");
+  });
+  await boss.schedule(IP_RETENTION, IP_RETENTION_CRON);
 }

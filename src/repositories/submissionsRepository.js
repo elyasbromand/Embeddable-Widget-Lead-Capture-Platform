@@ -51,3 +51,17 @@ export async function findSubmissionForEmail(submissionId) {
   );
   return result.rows[0] ?? null;
 }
+
+// Retention (DESIGN.md §7.2): a visitor's raw IP is personal data, kept only `days` days.
+// The submission, its answers and its geo stay; only the address is cleared. Not owner-scoped on
+// purpose: it is a system job over every tenant, run by the worker, never by a request.
+// Returns how many rows were cleared.
+export async function clearExpiredIps(days) {
+  const result = await pool.query(
+    `UPDATE submissions
+     SET ip = NULL
+     WHERE ip IS NOT NULL AND created_at < now() - make_interval(days => $1)`,
+    [days]
+  );
+  return result.rowCount;
+}

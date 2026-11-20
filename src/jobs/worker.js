@@ -1,12 +1,12 @@
 import { config } from "../config/index.js";
 import { logger } from "../logger.js";
 import { pool } from "../repositories/db.js";
-import { findSubmissionForEmail } from "../repositories/submissionsRepository.js";
+import { findSubmissionForEmail, clearExpiredIps } from "../repositories/submissionsRepository.js";
 import { createMailer } from "../integrations/mailer.js";
 import { createEmailService } from "../services/emailService.js";
 import { createBoss } from "./boss.js";
 import { ensureQueues } from "./queues.js";
-import { registerEmailWorkers } from "./handlers.js";
+import { registerEmailWorkers, registerRetentionWorker } from "./handlers.js";
 
 // Separate process (`npm run worker`): a slow or broken mail server never touches the API.
 const mailer = createMailer({
@@ -22,6 +22,7 @@ await boss.start();
 await ensureQueues(boss);
 
 await registerEmailWorkers(boss, { emailService, logger });
+await registerRetentionWorker(boss, { clearExpiredIps, logger });
 
 logger.info({ forceEmailFailure: config.FORCE_EMAIL_FAILURE }, "Worker started");
 

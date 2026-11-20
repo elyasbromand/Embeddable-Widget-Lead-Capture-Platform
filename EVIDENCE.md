@@ -994,7 +994,7 @@ $ docker compose up -d --wait postgres && curl localhost:3000/health
 {"status":"ok","db":"ok"} [200]
 ```
 
-_Pending (Step 5): malformed, oversized, wrong content type, invalid fields._
+Step 5: malformed, oversized, wrong content type and invalid fields are under row 8. Step 11: automated in `test/api/badPayloads.test.js` (see "Automated suite (Step 11)").
 
 ### S3. Background job with retries and a failure alert (Step 8)
 
@@ -1213,8 +1213,43 @@ $ grep -ciE 'correct-horse|argon2id|password_hash' server.log
 0
 ```
 
-_Pending (Step 12): gitleaks scan output._
+Step 12 (2026-11-21): gitleaks v8.28.0 (Docker image `zricethezav/gitleaks:v8.28.0`) over the full
+git history.
+
+The first run had one finding:
+
+```
+$ docker run --rm -v "<repo>:/repo" zricethezav/gitleaks:v8.28.0 git /repo --redact -v
+RuleID:      curl-auth-header
+File:        EVIDENCE.md
+Line:        92
+Commit:      f32272837a32fc06c4d4f11ad5804034ef688cb9
+17 commits scanned.  leaks found: 1
+```
+
+The flagged value is `abc.def.ghi`, the deliberately fake token that row 1 sends to prove a bad
+token gets 401. It is a false positive, so its fingerprint was recorded with that reason in
+`.gitleaksignore`. Results after that:
+
+```
+$ docker run ... gitleaks:v8.28.0 git /repo --redact --gitleaks-ignore-path /repo/.gitleaksignore
+17 commits scanned.
+scanned ~441895 bytes (441.89 KB) in 4.98s
+no leaks found
+```
+
+The files about to be committed (`git ls-files -co --exclude-standard`, so `.env` is excluded)
+were also scanned with `gitleaks dir`. The only finding was the same `abc.def.ghi` line in
+EVIDENCE.md.
+
+Every variable the code reads is in `.env.example` with a placeholder:
+
+```
+DATABASE_URL ok · FORCE_EMAIL_FAILURE ok · GEO_FORCE_DOWN ok · GEO_TEST_IP ok · JWT_SECRET ok · LOG_LEVEL ok
+MAIL_FROM ok · NODE_ENV ok · PORT ok · PUBLIC_BASE_URL ok · SMTP_HOST ok · SMTP_PORT ok · TEST_DATABASE_URL ok
+```
 
 ### S7. Cost tracking, if AI is used (Step 12)
 
-_Pending: README statement that the product uses no AI._
+Step 12 (2026-11-21): the README's "AI use" section says the product calls no model at runtime,
+so there is no AI cost to track. AI help during development is logged step by step in BUILDLOG.md.

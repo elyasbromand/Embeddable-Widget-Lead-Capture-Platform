@@ -1,6 +1,10 @@
 // Queue names and their retry policy, shared by the API (producer) and the worker (consumer).
 export const CONFIRMATION_EMAIL = "confirmation-email";
 export const CONFIRMATION_EMAIL_DLQ = "confirmation-email-dlq";
+// Daily job that clears raw IPs older than IP_RETENTION_DAYS (DESIGN.md §7.2).
+export const IP_RETENTION = "ip-retention";
+export const IP_RETENTION_DAYS = 90;
+export const IP_RETENTION_CRON = "0 3 * * *"; // every day at 03:00 UTC
 
 // Retry policy lives on the queue, so every job sent to it gets the same rules.
 // 3 retries with exponential backoff AND jitter: retryBackoff makes pg-boss wait
@@ -21,4 +25,6 @@ export const CONFIRMATION_EMAIL_OPTIONS = {
 export async function ensureQueues(boss, overrides = {}) {
   await boss.createQueue(CONFIRMATION_EMAIL_DLQ);
   await boss.createQueue(CONFIRMATION_EMAIL, { ...CONFIRMATION_EMAIL_OPTIONS, ...overrides });
+  // Default retry policy is enough: if a run fails, tomorrow's run clears the same rows.
+  await boss.createQueue(IP_RETENTION);
 }

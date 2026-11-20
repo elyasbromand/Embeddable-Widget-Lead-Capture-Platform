@@ -14,6 +14,9 @@ const DEMO_PASSWORD = "demo-password-123";
 const tenants = [
   {
     email: "tenant-a@example.com",
+    // Fixed public ids for the demo widgets only: test-site/index.html and scripts/attack.js use
+    // them, so they work on a fresh clone. Real widgets always get a random id.
+    publicId: "lvuvcZeFr-42",
     widget: {
       type: "signup",
       title: "Join our newsletter",
@@ -28,6 +31,7 @@ const tenants = [
   },
   {
     email: "tenant-b@example.com",
+    publicId: "cqaxksTr2jOc",
     widget: {
       type: "contact",
       title: "Contact us",
@@ -56,7 +60,7 @@ try {
     const user = await ensureUser(tenant.email);
     const existing = await widgetsService.list(user.id);
     const widget =
-      existing[0] ?? (await widgetsService.create(user.id, createWidgetSchema.parse(tenant.widget)));
+      existing[0] ?? (await widgetsService.create(user.id, createWidgetSchema.parse(tenant.widget), tenant.publicId));
     logger.info({ email: user.email, widgetId: widget.id, created: !existing[0] }, "Seeded tenant");
   }
   logger.info(`Done. Log in as either tenant with password "${DEMO_PASSWORD}".`);

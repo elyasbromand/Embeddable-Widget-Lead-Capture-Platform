@@ -6,6 +6,11 @@ import pg from "pg";
 // 2. Run the migrations against it, exactly as `npm run migrate up` does for dev.
 // So "green" always means "green from a clean database", never "green on leftovers".
 export default async function setup() {
+  // This function DROPs a database. Never let it run with production settings, even though the
+  // _test suffix below already keeps it away from the production database itself.
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Refusing to run the test suite with NODE_ENV=production");
+  }
   const testUrl = new URL(process.env.TEST_DATABASE_URL ?? deriveTestUrl());
   const dbName = testUrl.pathname.slice(1);
   if (!/^[a-z_][a-z0-9_]*$/.test(dbName) || !dbName.endsWith("_test")) {

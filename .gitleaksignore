@@ -1,0 +1,3 @@
+# Reviewed false positives only. Each line is a gitleaks fingerprint (commit:file:rule:line).
+# EVIDENCE.md row 1 sends the deliberately fake token "abc.def.ghi" to prove that a bad token gets 401.
+f32272837a32fc06c4d4f11ad5804034ef688cb9:EVIDENCE.md:curl-auth-header:92

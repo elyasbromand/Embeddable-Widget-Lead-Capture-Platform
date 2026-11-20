@@ -12,8 +12,10 @@ function newPublicId() {
 // Same message whether the widget is missing or another tenant's.
 const notFound = () => new NotFoundError("Widget not found");
 
-export async function create(ownerId, data) {
-  const widget = await widgetsRepository.createWidget(ownerId, newPublicId(), data);
+// publicId is only passed by the seed (fixed demo ids, so test-site/ works on a fresh clone);
+// the API never passes it, so every owner-created widget gets a random id.
+export async function create(ownerId, data, publicId = newPublicId()) {
+  const widget = await widgetsRepository.createWidget(ownerId, publicId, data);
   return addSnippet(widget);
 }
 
