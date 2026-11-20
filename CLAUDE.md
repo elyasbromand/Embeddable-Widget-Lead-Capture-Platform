@@ -118,17 +118,18 @@ geo (never throws, `null` on failure) → insert → enqueue email (failure logg
 
 ## Commands
 
-Planned; update this section as each one actually exists.
+All of these exist.
 
 ```bash
 docker compose up -d        # Postgres + Mailpit (Mailpit UI: http://localhost:8025)
 npm run migrate up          # apply migrations   (npm run migrate down to roll back)
 npm run seed                # two demo tenants with a widget each
+npm run start:all           # builds the widget, then API on :3000 + worker (one command)
 npm run dev                 # builds the widget, then API on http://localhost:3000 (auto-restart; `npm start` without)
 npm run worker              # pg-boss worker (email jobs)
 npm run build:widget        # esbuild → dist/widget.<hash>.js + manifest
 npm run test-site           # second-origin test page on http://localhost:5500
-npm test                    # builds widget, recreates <db>_test, runs the whole suite (96 tests)
+npm test                    # builds widget, recreates <db>_test, runs the whole suite (98 tests)
 node scripts/attack.js      # rate-limit burst probe
 ```
 
@@ -164,4 +165,5 @@ Update this line at each gate.
 - Step 9 done (2026-11-19): real widget (shadow DOM, `textContent` only, honeypot, `Idempotency-Key` per form version), hostile-CSS test site on :5500, `Retry-After` exposed via CORS. Browser gate proof in EVIDENCE.md rows 6–7.
 - Step 10 done (2026-11-20): `GET /api/submissions` (keyset cursor) and `GET /api/stats/overview`, all aggregation in SQL, `EXPLAIN` on 100k rolled-back rows (one join fixed, no new index). Probe 1 proof in EVIDENCE.md rows 9, 15 and S4.
 - Step 11 done (2026-11-20): 96 tests in 12 files (one file per probe + tenant isolation), fresh `widgets_test` per run, mocks injected via `createApp({ submissionsService, rateLimits })`, real pg-boss retry test. Output in EVIDENCE.md "Automated suite (Step 11)".
-- Current step: **Step 12, submission pack**
+- Step 12 done (2026-11-20): README, capstone.yaml, `npm run start:all`, 90-day raw-IP retention job, fixed demo widget ids, gitleaks clean, fresh-clone gate (all six probes + 98 tests) in EVIDENCE.md row 16.
+- Current step: **final self-check (coverage map row by row), then submit the repo link**

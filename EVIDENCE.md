@@ -803,7 +803,138 @@ Automated (Step 11): `test/api/dashboard.test.js`. The cursor walks 7 rows over 
 
 ### 16. README with diagram, setup, API docs; required files present (Step 12)
 
-_Pending: fresh-clone run from the README alone._
+Step 12 (2026-11-20): a fresh clone from GitHub (commit `fd1b420`), run only with the README's
+commands, against its own new Postgres and Mailpit. The dev stack was stopped with
+`docker compose stop`, which keeps its data, and the dev API and test site were stopped by me.
+
+The clone went into a folder named `fresh-clone`, because Compose names a project after its folder:
+a second checkout with the same folder name on this machine would reuse the dev containers and
+volume. An evaluator on another machine does not hit this.
+
+**Setup, exactly as in the README:**
+
+```
+$ git clone https://github.com/elyasbromand/Embeddable-Widget-Lead-Capture-Platform.git fresh-clone
+fd1b420 Step 12 (part 1): README with architecture, setup, API and limitations; ...
+$ cp .env.example .env
+$ npm ci
+npm warn allow-scripts   esbuild@0.28.2 (postinstall: node install.js)     (skipped by npm; the build still worked)
+$ docker compose up -d --wait
+ Container fresh-clone-mailpit-1 Healthy
+ Container fresh-clone-postgres-1 Healthy
+$ npm run migrate up
+### MIGRATION 1792792474378_create-users (UP) ###
+### MIGRATION 1792792478063_create-widgets (UP) ###
+### MIGRATION 1792792481862_create-submissions (UP) ###
+Migrations complete!
+$ npm run seed
+"email":"tenant-a@example.com","widgetId":"lvuvcZeFr-42","created":true
+"email":"tenant-b@example.com","widgetId":"cqaxksTr2jOc","created":true
+$ npm run start:all
+built dist/widget.TIEQGPRQ.js (4595 bytes)            (same hash as the dev machine: reproducible build)
+"msg":"Worker started"   "msg":"Job producer ready"   "port":3000,"msg":"API listening"
+$ curl -i localhost:3000/health
+HTTP/1.1 200 OK
+{"status":"ok","db":"ok"}
+```
+
+**Probes 1, 2 and 6** (with `start:all` running):
+
+```
+=== Probe 1: valid submission, then the owner API
+preflight 204  allow-origin *  methods POST, OPTIONS  headers Content-Type, Idempotency-Key
+valid POST                     201  CORS *  {"id":"39ff1dc5-21c0-4f6a-a3b0-10da551b27ac","createdAt":"2026-11-20T18:05:12.878Z"}
+tenant A list has it: true (1 rows)   tenant B list has it: false (0 rows)
+tenant A stats: {"total":1,"last24h":1}
+
+=== Probe 2: bad payloads
+malformed JSON                 400  CORS *  {"error":{"code":"BAD_REQUEST","message":"Malformed JSON body"}}
+11 kB body                     413  CORS *  {"error":{"code":"PAYLOAD_TOO_LARGE","message":"Request body is too large"}}
+text/plain                     415  CORS *  {"error":{"code":"UNSUPPORTED_MEDIA_TYPE","message":"Content-Type must be application/json"}}
+invalid email                  422  CORS *  {"error":{"code":"VALIDATION_FAILED","message":"Request validation failed","details":[{"path":"email","message…
+unknown widget                 404  CORS *  {"error":{"code":"NOT_FOUND","message":"Widget not found"}}
+
+=== Probe 6: honeypot
+website filled                 201  CORS *  {"id":"989b112a-f14a-4091-99b6-f9d0e66a29d6","createdAt":"2026-11-20T18:05:13.345Z"}
+tenant A total before 1, after 1
+
+=== Mailpit: 1 message(s); to fresh-mwpahilk: 1; to bot-mwpahilk: 0
+```
+
+**Probe 3**, on a freshly started API, running the clone's own `scripts/attack.js` from the clone
+folder:
+
+```
+Burst: 30 parallel POST http://localhost:3000/submissions (widget lvuvcZeFr-42)
+Done in 613 ms. Status counts: { '201': 10, '429': 20 }
+Sample 429:
+  Retry-After: 60
+  RateLimit:   "10-in-1min"; r=0; t=60
+  Body:        {"error":{"code":"RATE_LIMITED","message":"Too many requests, try again later"}}
+Waiting 61 s for the window to reset...
+Normal request after the window: 201 {"id":"f0002ec1-de89-4330-a097-cd6c8e9e1666","createdAt":"2026-11-20T18:08:20.849Z"}
+PASS
+```
+
+A first attempt at this probe did not count. `Set-Location` failed on a short Windows path, so
+`attack.js` ran from the dev folder (same commit, same result); the run above is the one from the clone.
+
+**Probe 4**, with a fresh API per run:
+
+```
+=== 4a: GEO_TEST_IP=8.8.8.8 GEO_FORCE_DOWN=ip-api.com      FIRST TRY FAILED
+201  stored: NULL  geo_is_null=true
+  log: {"provider":"ip-api.com","error":"ip-api.com forced down (GEO_FORCE_DOWN)"}
+  log: {"provider":"ipapi.co","error":"The operation was aborted due to timeout"}
+=== 4a again (fresh API)
+run 1 -> 201  stored geo: {"city": "Mountain View", "region": "California", "country": "US"}
+=== 4b: GEO_FORCE_DOWN=ip-api.com,ipapi.co (both down)
+201  stored: NULL  geo_is_null=true
+```
+
+The first 4a try is the same real-network failure as in the Phase 2 sweep: the backup provider
+(ipapi.co, a free tier) did not answer within 1.5 s. The chain degraded correctly (201, row stored,
+geo NULL). The retry on a fresh server got geo from ipapi.co. `test/api/geoFallback.test.js` proves
+the same chain without the network.
+
+**Probe 5**, with the worker on `FORCE_EMAIL_FAILURE=true`. The first attempt was invalid: no worker
+had run during Probes 3 and 4, so about 24 email jobs were waiting. The failing worker started on that
+backlog, and the script stopped at the first `ALERT`, which belonged to an older job. The backlog was
+cleared with a normal worker (47 s, to the clone's own Mailpit), and the probe was rerun, this time
+waiting for the ALERT of its own submission:
+
+```
+POST -> {"id":"3dac3697-815b-457f-b682-fc14c9ad3278","createdAt":"2026-11-20T18:11:02.320Z"}
+stored: 1 row
+  22:41:04  attempt 1  Confirmation email failed; will retry
+  22:41:08  attempt 2  Confirmation email failed; will retry
+  22:41:16  attempt 3  Confirmation email failed; will retry
+  22:41:28  attempt 4  Confirmation email failed; will retry
+  22:41:30             ALERT confirmation email gave up after all retries (submission 3dac3697-815b-457f-b682-fc14c9ad3278)
+         queue          |   state   | retry_count
+------------------------+-----------+-------------
+ confirmation-email     | failed    |           3
+ confirmation-email-dlq | completed |           0
+Mailpit messages to mailfail-224000: 0
+Raw IPs in any log line: 0
+API error lines (level 50): 0
+```
+
+**The test suite**, run from the clone:
+
+```
+$ npm test
+built dist/widget.TIEQGPRQ.js (4595 bytes)
+ Test Files  13 passed (13)
+      Tests  98 passed (98)
+```
+
+**Teardown:** `docker compose down -v` in the clone removed only `fresh-clone-*` and
+`fresh-clone_pgdata`. The dev stack was restarted with `docker compose start`, and its data is
+unchanged: `dev submissions: 95`.
+
+Not covered by this run: the browser check of `npm run test-site` on the clone. The widget on :5500
+was proven in the browser in Step 9, and the clone serves the identical bundle (same hash).
 
 ### Automated suite (Step 11)
 
