@@ -162,4 +162,5 @@ Update this line at each gate.
 - Step 7 done (2026-11-18): geo chain (ip-api.com → ipapi.co, 1.5 s each, `null` on failure), private IPs skipped, `GEO_TEST_IP` / `GEO_FORCE_DOWN`, vitest (43 tests). Probe 4 proof in EVIDENCE.md.
 - Step 8 done (2026-11-18): pg-boss worker (`npm run worker`), enqueue after insert (`id: submissionId`, failure logged, still 201), 3 retries with backoff + jitter, dead-letter queue + ALERT, `FORCE_EMAIL_FAILURE`. Probe 5 proof in EVIDENCE.md.
 - Step 9 done (2026-11-19): real widget (shadow DOM, `textContent` only, honeypot, `Idempotency-Key` per form version), hostile-CSS test site on :5500, `Retry-After` exposed via CORS. Browser gate proof in EVIDENCE.md rows 6–7.
-- Current step: **Step 10, owner dashboard**
+- Step 10 done (2026-11-20): `GET /api/submissions` (keyset cursor) and `GET /api/stats/overview`, all aggregation in SQL, `EXPLAIN` on 100k rolled-back rows (one join fixed, no new index). Probe 1 proof in EVIDENCE.md rows 9, 15 and S4.
+- Current step: **Step 11, tests and attack scripts**

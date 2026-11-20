@@ -171,7 +171,17 @@ $ psql: widgets by owner
 (2 rows)
 ```
 
-B's widget and a non-existent id give the same 404 body. _Pending (Step 11): automated test name and output; submissions isolation (Step 10)._
+B's widget and a non-existent id give the same 404 body. _Pending (Step 11): automated test name and output._
+
+Step 10 (2026-11-20): submissions are isolated too. Every query in `src/repositories/dashboardRepository.js`
+is scoped by `owner_id = $1`. Tenant B sees only its own 4 rows. Filtering by A's widget gives the same
+404 as an unknown widget:
+
+```
+B list: 200 4 rows; contains browser row: false ; widgets: cqaxksTr2jOc
+B filters by A's widget: 404 {"error":{"code":"NOT_FOUND","message":"Widget not found"}}
+B stats: 200 {"totals":{"total":4,"last24h":0},"perWidget":[{"widgetId":"cqaxksTr2jOc","title":"Contact us","count":4}], ...}
+```
 
 ### 3. Embed snippet generated per widget (Step 4)
 
@@ -433,7 +443,15 @@ widget    |        owner         | owner_matches | ip  |                        
 (2 rows)
 ```
 
-_Pending (Step 10): the same row through the dashboard API._
+Step 10 (2026-11-20): the Step 9 browser row (`ef3b8fec-…`, sent from :5500) through the owner API.
+A script logged in as each demo tenant and called the endpoints:
+
+```
+A walk (GET /api/submissions?limit=7, following nextCursor): 91 rows over 13 pages, duplicates 0, newest-first true
+browser row (Step 9) in A's list: true
+B list: 200 4 rows; contains browser row: false ; widgets: cqaxksTr2jOc
+A page 1 item keys: id,widgetId,data,geo,createdAt      (no ip, no owner_id, no internal widget uuid)
+```
 
 ### 10. Burst gets 429 and normal traffic still works — Probe 3 (Step 6)
 
@@ -721,7 +739,49 @@ Not in this gate: the browser POST from the :5500 page (Step 9, row 7) and the d
 
 ### 15. Owner dashboard: submissions and basic analytics (Step 10)
 
-_Pending: responses for list, per-widget counts, counts per day, geo breakdown._
+Step 10 (2026-11-20). Two endpoints:
+
+- `GET /api/submissions?widgetId=&limit=&cursor=`: owner-scoped, newest first, with a keyset cursor.
+- `GET /api/stats/overview?days=`: totals, per widget, per day and per country.
+
+All counting is done in SQL (`src/repositories/dashboardRepository.js`).
+
+Responses for tenant A (`days=7`) and the edge cases:
+
+```
+A stats: 200 {"totals":{"total":91,"last24h":0},
+  "perWidget":[{"widgetId":"lvuvcZeFr-42","title":"Monthly newsletter","count":91},{"widgetId":"hDEem5q4z9Ea","title":"Snippet test","count":0},{"widgetId":"t9s7w0C136WC","title":"Snippet test","count":0},{"widgetId":"yzDrs08dptWD","title":"Gate 4 widget","count":0}],
+  "perDay":{"days":7,"counts":[{"day":"2026-11-14","count":0},{"day":"2026-11-15","count":0},{"day":"2026-11-16","count":0},{"day":"2026-11-17","count":0},{"day":"2026-11-18","count":25},{"day":"2026-11-19","count":27},{"day":"2026-11-20","count":0}]},
+  "byCountry":[{"country":"US","count":46},{"country":null,"count":45}]}
+A page 1 (limit=2): 200, 2 items, nextCursor present
+tampered cursor:  422 {"error":{"code":"VALIDATION_FAILED","message":"Request validation failed","details":[{"path":"cursor","message":"Invalid cursor"}]}}
+no token:         401
+days=0:           422
+```
+
+How to read these numbers:
+
+- Widgets with no submissions are listed with 0, and so are days with none.
+- Rows without geo are counted under `country: null`, so 46 + 45 = 91.
+- `last24h` is 0 because the newest row is from 2026-11-19 12:27 UTC, more than 24 h before the run.
+
+The stats match a hand-written SQL count:
+
+```
+$ psql -c "SELECT u.email AS owner, count(s.id) AS total, count(*) FILTER (WHERE s.created_at::date = '2026-11-18') AS nov18, count(*) FILTER (WHERE s.created_at::date = '2026-11-19') AS nov19, count(*) FILTER (WHERE s.geo->>'country' = 'US') AS us, count(*) FILTER (WHERE s.geo IS NULL) AS no_geo FROM users u LEFT JOIN submissions s ON s.owner_id = u.id WHERE u.email IN ('tenant-a@example.com','tenant-b@example.com') GROUP BY u.email ORDER BY 1"
+        owner         | total | nov18 | nov19 | us | no_geo
+----------------------+-------+-------+-------+----+--------
+ tenant-a@example.com |    91 |    25 |    27 | 46 |     45
+ tenant-b@example.com |     4 |     0 |     0 |  0 |      4
+```
+
+| | API A | SQL A | API B | SQL B |
+| --- | --- | --- | --- | --- |
+| total | 91 | 91 | 4 | 4 |
+| 2026-11-18 / 2026-11-19 | 25 / 27 | 25 / 27 | 0 / 0 | 0 / 0 |
+| US / no geo | 46 / 45 | 46 / 45 | 0 / 4 | 0 / 4 |
+
+The `EXPLAIN` results and the one query fix are under S4.
 
 ### 16. README with diagram, setup, API docs; required files present (Step 12)
 
@@ -840,7 +900,75 @@ $ npm run seed   (run 2)
 "email":"tenant-b@example.com","widgetId":"cqaxksTr2jOc","created":false
 ```
 
-_Pending (Step 10): EXPLAIN on dashboard queries._
+Step 10 (2026-11-20): `EXPLAIN ANALYZE` on every dashboard query.
+
+With only 95 real rows, Postgres would rightly choose a sequential scan, so the test used a throwaway
+transaction:
+
+1. Insert 100,000 rows: 5,000 for tenant A and 95,000 for tenant B, spread over 90 days. That makes A
+   one tenant among many.
+2. Run `ANALYZE`.
+3. Run each query with A's owner id.
+4. `ROLLBACK`. Rows before: 95. Rows after the rollback: 95.
+
+Lines from the plans, run with `EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY ON)`:
+
+```
+rows_now 100095 | tenant_a 5091
+
+=== 1. listSubmissions, first page                                       Execution Time: 0.219 ms
+ Limit (actual rows=21 loops=1)
+   ->  Incremental Sort ... Presorted Key: s.created_at
+         ->  Nested Loop (actual rows=22 loops=1)
+               ->  Index Scan Backward using submissions_owner_id_created_at_idx on submissions s (actual rows=22 loops=1)
+                     Index Cond: (owner_id = '8adcef6a-...'::uuid)
+=== 1b. listSubmissions, a later page (cursor 30 days back)             Execution Time: 0.269 ms
+               ->  Index Scan Backward using submissions_owner_id_created_at_idx on submissions s (actual rows=22 loops=1)
+                     Index Cond: ((owner_id = '8adcef6a-...'::uuid) AND (created_at <= (now() - '30 days'::interval)))
+                     Filter: (ROW(created_at, id) < ROW((now() - '30 days'::interval), 'ffffffff-...'::uuid))
+=== 2. countTotals                                                       Execution Time: 3.072 ms
+   ->  Bitmap Heap Scan on submissions (actual rows=5091 loops=1)
+         ->  Bitmap Index Scan on submissions_owner_id_created_at_idx (actual rows=5091 loops=1)
+=== 3. countPerWidget (as first written)                                 Execution Time: 11.619 ms
+         ->  Hash Right Join (actual rows=5094 loops=1)
+               ->  Seq Scan on submissions s (actual rows=100095 loops=1)
+=== 4. countPerDay (30 days)                                             Execution Time: 1.776 ms
+         ->  Nested Loop Left Join (actual rows=2227 loops=1)
+               ->  Function Scan on generate_series d (actual rows=30 loops=1)
+               ->  Index Scan using submissions_owner_id_created_at_idx on submissions s (actual rows=74 loops=30)
+                     Index Cond: ((owner_id = '8adcef6a-...'::uuid) AND (created_at >= d.day) AND (created_at < (d.day + '1 day'::interval)))
+=== 5. countByCountry                                                    Execution Time: 4.102 ms
+         ->  Bitmap Heap Scan on submissions (actual rows=5091 loops=1)
+               ->  Bitmap Index Scan on submissions_owner_id_created_at_idx (actual rows=5091 loops=1)
+ROLLBACK
+ rows_after_rollback 95
+```
+
+Four of the five queries use `(owner_id, created_at)`. The list query reads that index backward and
+stops after 22 rows. The cursor's time is in `Index Cond`; the `id` tie-break is a cheap `Filter`.
+
+**Query 3 read every tenant's rows.** The owner condition was only on `widgets`, so Postgres had no
+owner filter on `submissions` and scanned all 100,095 rows. The result was correct, but the query
+would slow down for every tenant as the whole platform grows.
+
+**The fix needed no new index:** add `AND s.owner_id = w.owner_id` to the join. That condition is
+always true for a matching row, and it lets Postgres use the index.
+
+Both versions were compared in the same transaction, after `VACUUM`. Dead index entries from an
+earlier rolled-back run had inflated the first retry, so a fair comparison needed the cleanup:
+
+```
+=== 3 as written
+               ->  Seq Scan on submissions s (actual rows=100095 loops=1)
+ Execution Time: 13.634 ms
+=== 3 fixed
+               ->  Bitmap Heap Scan on submissions s (actual rows=5091 loops=1)
+                     ->  Bitmap Index Scan on submissions_owner_id_created_at_idx (actual rows=5091 loops=1)
+ Execution Time: 4.683 ms
+--- same result as before?   same = t
+```
+
+No index was added in Step 10. The Step 2 index serves every dashboard query.
 
 ### S5. Idempotency where it matters (Steps 6, 8)
 
