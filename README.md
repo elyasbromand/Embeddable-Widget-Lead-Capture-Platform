@@ -18,26 +18,36 @@ Three actors, three request paths, one API process and one worker process sharin
 
 ```mermaid
 flowchart LR
-  subgraph Customer site, any origin
-    S["&lt;script src=/widget.js?id=…&gt;"] --> L["loader<br/>max-age=300"]
-    L --> B["widget.&lt;hash&gt;.js<br/>immutable, 1 year"]
-    B -->|"GET /widgets/:id/config<br/>CORS *, max-age=60, ETag"| API
-    B -->|"POST /submissions<br/>CORS *, preflight cached 2 h"| API
+  subgraph site["Customer site (any origin)"]
+    S["snippet: script tag<br/>/widget.js?id=..."]
+    L["loader<br/>max-age=300"]
+    B["widget.HASH.js<br/>immutable, 1 year"]
   end
-  O["Owner<br/>(JWT bearer)"] -->|"/auth/*, /api/*<br/>no CORS"| API
 
-  subgraph API process
-    API["Express 5<br/>routes → services → repositories"]
-  end
-  API -->|"geo lookup, 1.5 s each<br/>A → B → null"| G["ip-api.com → ipapi.co"]
-  API -->|"SQL, owner-scoped"| PG[("PostgreSQL<br/>users · widgets · submissions<br/>pgboss schema")]
-  API -->|"enqueue job {submissionId}"| PG
+  O["Owner<br/>(JWT bearer)"]
 
-  subgraph Worker process
-    W["pg-boss worker<br/>3 retries, backoff + jitter<br/>dead letter → ALERT<br/>daily IP retention"]
+  subgraph apiproc["API process"]
+    API["Express 5<br/>routes, services, repositories"]
   end
-  PG --> W
-  W -->|SMTP| M["Mailpit (local)"]
+
+  subgraph workerproc["Worker process"]
+    W["pg-boss worker<br/>confirmation email: 3 retries,<br/>backoff + jitter, dead letter, ALERT<br/>ip-retention: daily at 03:00 UTC"]
+  end
+
+  G["Geo providers<br/>ip-api.com, then ipapi.co"]
+  PG[("PostgreSQL<br/>users, widgets, submissions<br/>pgboss schema")]
+  M["Mailpit (local SMTP)"]
+
+  S --> L
+  L --> B
+  B -- "GET /widgets/:id/config<br/>CORS *, max-age=60, ETag" --> API
+  B -- "POST /submissions<br/>CORS *, preflight cached 2 h" --> API
+  O -- "/auth/*, /api/*<br/>no CORS" --> API
+  API -- "geo lookup, 1.5 s each<br/>A, then B, then null" --> G
+  API -- "SQL, owner-scoped<br/>enqueue job: submissionId" --> PG
+  PG -- "jobs" --> W
+  W -- "SMTP" --> M
+  W -- "daily: ip = NULL on rows<br/>older than 90 days" --> PG
 ```
 
 **The submission pipeline**, in order. Each step rejects cheaply before the next, more expensive one runs:
@@ -71,6 +81,21 @@ POST /submissions
 The rule: a failure the visitor can fix, or that protects us, is returned. A failure in an optional
 side effect (geo, email) is never allowed to lose or reject a lead that was otherwise valid.
 
+### Background jobs (worker process)
+
+The worker (`npm run worker`, or included in `npm run start:all`) is a separate process, so slow or
+failing background work never touches the API. Both jobs live in Postgres through pg-boss, so they
+survive restarts and run once even with several workers.
+
+| Job | When | What it does | When it fails |
+| --- | --- | --- | --- |
+| `confirmation-email` | queued by the API after each stored submission (job id = submission id, so a retried request never sends a second email) | sends a plain-text confirmation to the widget's email field via SMTP (Mailpit locally) | 3 retries with exponential backoff and jitter (2–4 s, 4–8 s, 8–16 s), then the job is copied to `confirmation-email-dlq` and an `ALERT` line is logged |
+| `ip-retention` | scheduled daily at 03:00 UTC (`boss.schedule`, stored in `pgboss.schedule`) | sets `ip = NULL` on submissions older than **90 days**; the lead, its answers and its geo are kept; only the number of cleared rows is logged, never an address | the next day's run clears the same rows |
+
+The code is in `src/jobs/` (`queues.js`: names and policies, `handlers.js`: the two handlers,
+`worker.js`: starts the process); the retention SQL is `clearExpiredIps` in
+`src/repositories/submissionsRepository.js`.
+
 ### Code layout
 
 ```
@@ -80,7 +105,7 @@ src/
   services/      business logic; no SQL, no req/res; side effects injected
   repositories/  the only place SQL lives; every owner query has  WHERE owner_id = $n
   integrations/  geo providers, mailer
-  jobs/          pg-boss queues, worker, handlers
+  jobs/          pg-boss queues, worker, handlers (confirmation email, 90-day IP retention)
 widget/src/      the embeddable widget (vanilla JS, shadow DOM, textContent only)
 test-site/       a second origin (port 5500) with hostile CSS and only the snippet
 migrations/      node-pg-migrate, each with up and down
@@ -100,7 +125,7 @@ npm ci
 docker compose up -d --wait   # Postgres 17 + Mailpit
 npm run migrate up            # create the tables
 npm run seed                  # two demo tenants, one widget each
-npm run start:all             # API on http://localhost:3000 + the email worker
+npm run start:all             # API on http://localhost:3000 + the worker (emails, daily IP retention)
 ```
 
 Then, in other terminals:
