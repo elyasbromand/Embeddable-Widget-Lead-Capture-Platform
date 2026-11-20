@@ -128,7 +128,7 @@ npm run dev                 # builds the widget, then API on http://localhost:30
 npm run worker              # pg-boss worker (email jobs)
 npm run build:widget        # esbuild → dist/widget.<hash>.js + manifest
 npm run test-site           # second-origin test page on http://localhost:5500
-npm test                    # vitest (loads .env), single command for the whole suite
+npm test                    # builds widget, recreates <db>_test, runs the whole suite (96 tests)
 node scripts/attack.js      # rate-limit burst probe
 ```
 
@@ -163,4 +163,5 @@ Update this line at each gate.
 - Step 8 done (2026-11-18): pg-boss worker (`npm run worker`), enqueue after insert (`id: submissionId`, failure logged, still 201), 3 retries with backoff + jitter, dead-letter queue + ALERT, `FORCE_EMAIL_FAILURE`. Probe 5 proof in EVIDENCE.md.
 - Step 9 done (2026-11-19): real widget (shadow DOM, `textContent` only, honeypot, `Idempotency-Key` per form version), hostile-CSS test site on :5500, `Retry-After` exposed via CORS. Browser gate proof in EVIDENCE.md rows 6–7.
 - Step 10 done (2026-11-20): `GET /api/submissions` (keyset cursor) and `GET /api/stats/overview`, all aggregation in SQL, `EXPLAIN` on 100k rolled-back rows (one join fixed, no new index). Probe 1 proof in EVIDENCE.md rows 9, 15 and S4.
-- Current step: **Step 11, tests and attack scripts**
+- Step 11 done (2026-11-20): 96 tests in 12 files (one file per probe + tenant isolation), fresh `widgets_test` per run, mocks injected via `createApp({ submissionsService, rateLimits })`, real pg-boss retry test. Output in EVIDENCE.md "Automated suite (Step 11)".
+- Current step: **Step 12, submission pack**

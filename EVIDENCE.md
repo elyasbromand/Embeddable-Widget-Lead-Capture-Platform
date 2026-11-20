@@ -171,7 +171,9 @@ $ psql: widgets by owner
 (2 rows)
 ```
 
-B's widget and a non-existent id give the same 404 body. _Pending (Step 11): automated test name and output._
+B's widget and a non-existent id give the same 404 body.
+
+Automated (Step 11): `test/api/tenantIsolation.test.js` has 14 tests: 401 without or with a forged token; for widgets, B's list, read, PATCH and DELETE of A's widget (404, same body as a missing id, A's widget unchanged); for submissions, B's list, filter, stats and no IP returned. See "Automated suite (Step 11)" below for the full output.
 
 Step 10 (2026-11-20): submissions are isolated too. Every query in `src/repositories/dashboardRepository.js`
 is scoped by `owner_id = $1`. Tenant B sees only its own 4 rows. Filtering by A's widget gives the same
@@ -413,6 +415,8 @@ Access-Control-Max-Age: 7200
 rows before bad requests: 20, after: 20
 ```
 
+Automated (Step 11): `test/api/badPayloads.test.js`. 9 cases (400, 413, 415, 422 ×4, 404 ×2), each checking the envelope, CORS and an unchanged row count. Plus "never echoes the rejected value back in a 422". See "Automated suite (Step 11)" below for the full output.
+
 ### 9. Valid submissions stored and linked to the right widget and tenant — Probe 1 (Steps 5, 10)
 
 Step 5 (2026-11-05): valid POSTs for both tenants, then the stored rows. `owner_id` comes from the widget row. `geo` is empty until Step 7.
@@ -453,6 +457,8 @@ B list: 200 4 rows; contains browser row: false ; widgets: cqaxksTr2jOc
 A page 1 item keys: id,widgetId,data,geo,createdAt      (no ip, no owner_id, no internal widget uuid)
 ```
 
+Automated (Step 11): `test/api/tenantIsolation.test.js` > "Probe 1: A's submission appears in A's list, linked to A's widget", and `test/api/dashboard.test.js`. See "Automated suite (Step 11)" below for the full output.
+
 ### 10. Burst gets 429 and normal traffic still works — Probe 3 (Step 6)
 
 Step 6 (2026-11-14): `node scripts/attack.js` against `node --env-file=.env src/server.js`. 30 parallel
@@ -478,6 +484,8 @@ CORS/preflight → per-IP (10/min) → 415 → `express.json` (10kb) → per-wid
 Also checked (2026-11-14, in-process probe): after the per-IP limit, a `text/plain` POST also gets 429,
 a preflight still gets 204, and the 429 carries `Access-Control-Allow-Origin: *`. The per-widget limiter
 alone: 105 × one real id → 100 × 201, 5 × 429; 300 × made-up 9kb ids share one bucket → 100 × 201, 200 × 429.
+
+Automated (Step 11): `test/api/rateLimit.test.js`. 3 per 1.5 s in tests (same mechanism as 10/min), a fresh app per test, recovery after 1.6 s. Also covered: per widget, junk requests counted, preflights not counted. See "Automated suite (Step 11)" below for the full output.
 
 ### 11. One spam control blocks a spammer — Probe 6 (Step 6)
 
@@ -529,6 +537,8 @@ caught, never a 422 (probe against the DB, rows added per request):
 9. bot + unknown widget (expect 404)     404 rows +0
 ```
 
+Automated (Step 11): `test/api/honeypot.test.js` > "Probe 6: honeypot" (3 tests: same 201 shape, no row, no email, no geo call, logged without the value). See "Automated suite (Step 11)" below for the full output.
+
 ### 12. Provider A down, provider B enriches — Probe 4 (Step 7)
 
 Unit tests: providers are injected mocks (`src/integrations/geo/mockProvider.js`), no network.
@@ -577,6 +587,8 @@ Stored rows (A's answer is Ashburn, B's is Mountain View, so 4a was enriched by 
  probe4-a-down@example.com    | lvuvcZeFr-42 | {"city": "Mountain View", "region": "California", "country": "US"} | f
 ```
 
+Automated (Step 11): `test/api/geoFallback.test.js`, end to end with mock providers injected: A up, A down → B, A hangs → timeout → B, and the stored row checked in the database. No network. See "Automated suite (Step 11)" below for the full output.
+
 ### 13. All providers down, submission still stored without geo — Probe 4 (Step 7)
 
 Unit test (written first, before `geoService` existed):
@@ -611,6 +623,8 @@ Stored row: `geo` is SQL `NULL` (not the JSON value `null`), so `WHERE geo IS NU
 Private visitor IP without the override (`GEO_TEST_IP` empty, visitor `::1`): `201 in 0.045717s`, no provider
 called, row `b0ef9116-…` stored with `ip = ::1`, `geo IS NULL = t`.
 
+Automated (Step 11): `test/api/geoFallback.test.js` > "both down: still 201, the row is stored with geo NULL, and the failures are logged without the IP". See "Automated suite (Step 11)" below for the full output.
+
 ### 14. Failing email or webhook does not block the submission — Probe 5 (Step 8)
 
 API started normally; worker started with `FORCE_EMAIL_FAILURE=true` (the mailer throws on every send).
@@ -636,6 +650,8 @@ The row is stored:
 
 API error lines during the run: `0`. Mailpit total: `0` (nothing was sent).
 Retries, dead letter and alert: see S3.
+
+Automated (Step 11): `test/api/emailFailure.test.js`. Queue down → 201 and row stored; real pg-boss with a failing email service → 4 attempts, job `failed`, ALERT. See "Automated suite (Step 11)" below for the full output.
 
 ### Phase 2 gate (brief): Steps 5–8 together
 
@@ -783,9 +799,158 @@ $ psql -c "SELECT u.email AS owner, count(s.id) AS total, count(*) FILTER (WHERE
 
 The `EXPLAIN` results and the one query fix are under S4.
 
+Automated (Step 11): `test/api/dashboard.test.js`. The cursor walks 7 rows over 3 pages in exactly the SQL order; bad query values give 422; stats match a hand-written SQL count. See "Automated suite (Step 11)" below for the full output.
+
 ### 16. README with diagram, setup, API docs; required files present (Step 12)
 
 _Pending: fresh-clone run from the README alone._
+
+### Automated suite (Step 11)
+
+Step 11 (2026-11-20). `npm test` is the single command.
+
+- **Before the run:** `pretest` builds the widget. Vitest's `globalSetup` then **drops and recreates
+  `widgets_test`** and runs every migration, so each run starts from a clean database. The dev
+  database is never touched: `submissions` had 95 rows before the run and 95 after.
+- **No network:** geo providers are mocks injected through `createApp({ submissionsService })`,
+  and the email queue is a fake. The one exception is the retry test, which uses real pg-boss on
+  the test database.
+- **Not flaky:** each rate-limit test builds its own app, with fresh counters and small limits.
+
+```
+$ npm test
+> pretest: npm run build:widget
+built dist/widget.TIEQGPRQ.js (4595 bytes)
+> node --env-file=.env node_modules/vitest/vitest.mjs run
+ Test Files  12 passed (12)
+      Tests  96 passed (96)
+   Duration  29.65s
+```
+
+The same suite run twice more, back to back: `Tests  96 passed (96)` both times.
+
+Per test (`vitest run --reporter=verbose`):
+
+```
+✓ test/api/emailFailure.test.js > Probe 5: email failure never reaches the visitor > when the queue itself is down, the visitor still gets 201, the row is stored, and the error is logged 248ms
+✓ test/api/emailFailure.test.js > Probe 5: email failure never reaches the visitor > on success the job carries only the submission id (no personal data) 84ms
+✓ test/api/emailFailure.test.js > emailService > sends a plain-text email to the widget's email field 1ms
+✓ test/api/emailFailure.test.js > emailService > throws when the mailer fails, which is what makes pg-boss retry 1ms
+✓ test/api/emailFailure.test.js > emailService > skips (no retry) when the submission is gone 1ms
+✓ test/api/emailFailure.test.js > Probe 5: retries, then dead letter and ALERT (real pg-boss) > tries 4 times, marks the job failed, and raises one ALERT 4163ms
+✓ test/api/rateLimit.test.js > Probe 3: rate limits > per IP: the 4th request in the window gets 429 with Retry-After and CORS, then it recovers 1694ms
+✓ test/api/rateLimit.test.js > Probe 3: rate limits > per IP: the limit runs before the body is read, so even junk requests count 18ms
+✓ test/api/rateLimit.test.js > Probe 3: rate limits > per widget: one widget's cap does not block another widget 63ms
+✓ test/api/rateLimit.test.js > Probe 3: rate limits > preflights are never counted 45ms
+✓ test/api/geoFallback.test.js > Probe 4: geo fallback, end to end > A up: the row has A's geo and B is never called 41ms
+✓ test/api/geoFallback.test.js > Probe 4: geo fallback, end to end > A down: the row has B's geo 27ms
+✓ test/api/geoFallback.test.js > Probe 4: geo fallback, end to end > A hangs: it is cut off by the timeout and B answers 149ms
+✓ test/api/geoFallback.test.js > Probe 4: geo fallback, end to end > both down: still 201, the row is stored with geo NULL, and the failures are logged without the IP 26ms
+✓ test/api/geoFallback.test.js > Probe 4: geo fallback, end to end > stores the real connection IP, not the geo test IP 24ms
+✓ test/api/honeypot.test.js > Probe 6: honeypot > a filled honeypot gets the same 201 shape as a real submission, but nothing is stored or emailed 29ms
+✓ test/api/honeypot.test.js > Probe 6: honeypot > an empty honeypot (what the real widget sends) is stored normally 20ms
+✓ test/api/honeypot.test.js > Probe 6: honeypot > a bot still gets 422 for invalid fields, so the trap is not revealed by a different answer 11ms
+✓ test/api/honeypot.test.js > Idempotency-Key (S5) > a retry with the same key returns the original row: one row, one email 30ms
+✓ test/api/honeypot.test.js > Idempotency-Key (S5) > parallel requests with the same key (a double click) still store one row 67ms
+✓ test/api/honeypot.test.js > Idempotency-Key (S5) > a key that is not a UUID is a 422 8ms
+✓ test/api/dashboard.test.js > Probe 1: owner dashboard > pages through every submission newest first, with no repeats and no gaps 27ms
+✓ test/api/dashboard.test.js > Probe 1: owner dashboard > rejects a tampered cursor and bad query values with 422, never 500 20ms
+✓ test/api/dashboard.test.js > Probe 1: owner dashboard > stats match a hand-written SQL count 30ms
+✓ test/api/tenantIsolation.test.js > tenant isolation > authentication > GET /api/widgets without a token → 401 11ms
+✓ test/api/tenantIsolation.test.js > tenant isolation > authentication > POST /api/widgets without a token → 401 5ms
+✓ test/api/tenantIsolation.test.js > tenant isolation > authentication > GET /api/submissions without a token → 401 8ms
+✓ test/api/tenantIsolation.test.js > tenant isolation > authentication > GET /api/stats/overview without a token → 401 5ms
+✓ test/api/tenantIsolation.test.js > tenant isolation > authentication > a forged token → 401 5ms
+✓ test/api/tenantIsolation.test.js > tenant isolation > widgets > B's list does not contain A's widget 11ms
+✓ test/api/tenantIsolation.test.js > tenant isolation > widgets > B reading A's widget gets the same 404 as a widget that does not exist 14ms
+✓ test/api/tenantIsolation.test.js > tenant isolation > widgets > B cannot change or delete A's widget, and A's widget is unchanged afterwards 22ms
+✓ test/api/tenantIsolation.test.js > tenant isolation > widgets > owner_id cannot be smuggled in the body 13ms
+✓ test/api/tenantIsolation.test.js > tenant isolation > submissions > Probe 1: A's submission appears in A's list, linked to A's widget 11ms
+✓ test/api/tenantIsolation.test.js > tenant isolation > submissions > B's list contains only B's submissions 10ms
+✓ test/api/tenantIsolation.test.js > tenant isolation > submissions > B filtering by A's widget gets 404, not an empty list 7ms
+✓ test/api/tenantIsolation.test.js > tenant isolation > submissions > B's stats count none of A's submissions 54ms
+✓ test/api/tenantIsolation.test.js > tenant isolation > submissions > the owner API never returns the visitor IP or internal ids 10ms
+✓ test/api/badPayloads.test.js > Probe 2: bad payloads on POST /submissions > malformed JSON → 400 BAD_REQUEST, with CORS, no row stored 16ms
+✓ test/api/badPayloads.test.js > Probe 2: bad payloads on POST /submissions > body over 10 kB → 413 PAYLOAD_TOO_LARGE, with CORS, no row stored 8ms
+✓ test/api/badPayloads.test.js > Probe 2: bad payloads on POST /submissions > text/plain content type → 415 UNSUPPORTED_MEDIA_TYPE, with CORS, no row stored 7ms
+✓ test/api/badPayloads.test.js > Probe 2: bad payloads on POST /submissions > invalid email field → 422 VALIDATION_FAILED, with CORS, no row stored 12ms
+✓ test/api/badPayloads.test.js > Probe 2: bad payloads on POST /submissions > missing required field → 422 VALIDATION_FAILED, with CORS, no row stored 9ms
+✓ test/api/badPayloads.test.js > Probe 2: bad payloads on POST /submissions > unknown field → 422 VALIDATION_FAILED, with CORS, no row stored 8ms
+✓ test/api/badPayloads.test.js > Probe 2: bad payloads on POST /submissions > body is a JSON array → 422 VALIDATION_FAILED, with CORS, no row stored 10ms
+✓ test/api/badPayloads.test.js > Probe 2: bad payloads on POST /submissions > unknown widget → 404 NOT_FOUND, with CORS, no row stored 10ms
+✓ test/api/badPayloads.test.js > Probe 2: bad payloads on POST /submissions > malformed widget id → 404 NOT_FOUND, with CORS, no row stored 7ms
+✓ test/api/badPayloads.test.js > Probe 2: bad payloads on POST /submissions > never echoes the rejected value back in a 422 7ms
+✓ test/api/cors.test.js > CORS > answers the preflight for POST /submissions with 204 and the allowed method and headers 6ms
+✓ test/api/cors.test.js > CORS > puts CORS headers on a successful cross-origin POST, and exposes Retry-After 16ms
+✓ test/api/cors.test.js > CORS > puts CORS headers on error responses too, so the widget can read them 14ms
+✓ test/api/cors.test.js > CORS > serves the public widget config to any origin, with a short cache 7ms
+✓ test/api/cors.test.js > CORS > does not open the owner API to other origins 4ms
+✓ test/geoService.test.js > geoService.lookup > returns null (and does not throw) when every provider is down 4ms
+✓ test/geoService.test.js > geoService.lookup > falls back to B when A is down 6ms
+✓ test/geoService.test.js > geoService.lookup > uses A when A is up and never calls B 1ms
+✓ test/geoService.test.js > geoService.lookup > times out a slow A and falls back to B 59ms
+✓ test/geoService.test.js > geoService.lookup > gives each provider its own timeout budget (one shared signal would fail B too) 91ms
+✓ test/geoService.test.js > geoService.lookup > returns null for "127.0.0.1" without calling any provider 0ms
+✓ test/geoService.test.js > geoService.lookup > returns null for "::ffff:127.0.0.1" without calling any provider 5ms
+✓ test/geoService.test.js > geoService.lookup > returns null for "10.0.0.5" without calling any provider 0ms
+✓ test/geoService.test.js > geoService.lookup > returns null for "not-an-ip" without calling any provider 2ms
+✓ test/geoService.test.js > geoService.lookup > returns null for undefined without calling any provider 0ms
+✓ test/geoService.test.js > geoService.lookup > logs each failure as a warning with the provider name and reason, never the IP 1ms
+✓ test/geoProviders.test.js > ipApiProvider > maps a success body to { country, region, city } 30ms
+✓ test/geoProviders.test.js > ipApiProvider > throws on a 200 with status 'fail' 2ms
+✓ test/geoProviders.test.js > ipApiProvider > throws on 429 (rate limited) 1ms
+✓ test/geoProviders.test.js > ipApiProvider > stores empty region/city as null 1ms
+✓ test/geoProviders.test.js > ipapiCoProvider > maps a success body to { country, region, city } 1ms
+✓ test/geoProviders.test.js > ipapiCoProvider > throws on { error: true } 1ms
+✓ test/geoProviders.test.js > ipapiCoProvider > throws when the body is not JSON 1ms
+✓ test/isPublicIp.test.js > isPublicIp > 8.8.8.8 is public 5ms
+✓ test/isPublicIp.test.js > isPublicIp > 2001:4860:4860::8888 is public 6ms
+✓ test/isPublicIp.test.js > isPublicIp > 172.32.0.1 is public 0ms
+✓ test/isPublicIp.test.js > isPublicIp > 172.15.255.255 is public 0ms
+✓ test/isPublicIp.test.js > isPublicIp > 127.0.0.1 is not public 0ms
+✓ test/isPublicIp.test.js > isPublicIp > ::1 is not public 2ms
+✓ test/isPublicIp.test.js > isPublicIp > ::ffff:127.0.0.1 is not public 0ms
+✓ test/isPublicIp.test.js > isPublicIp > ::ffff:192.168.1.5 is not public 0ms
+✓ test/isPublicIp.test.js > isPublicIp > 10.1.2.3 is not public 0ms
+✓ test/isPublicIp.test.js > isPublicIp > 192.168.0.10 is not public 0ms
+✓ test/isPublicIp.test.js > isPublicIp > 172.16.0.1 is not public 0ms
+✓ test/isPublicIp.test.js > isPublicIp > 172.31.255.255 is not public 1ms
+✓ test/isPublicIp.test.js > isPublicIp > 169.254.1.1 is not public 0ms
+✓ test/isPublicIp.test.js > isPublicIp > 0.0.0.0 is not public 0ms
+✓ test/isPublicIp.test.js > isPublicIp > :: is not public 5ms
+✓ test/isPublicIp.test.js > isPublicIp > fd12:3456::1 is not public 1ms
+✓ test/isPublicIp.test.js > isPublicIp > fe80::1 is not public 0ms
+✓ test/isPublicIp.test.js > isPublicIp > "not-an-ip" is rejected without throwing 1ms
+✓ test/isPublicIp.test.js > isPublicIp > "" is rejected without throwing 0ms
+✓ test/isPublicIp.test.js > isPublicIp > undefined is rejected without throwing 0ms
+✓ test/isPublicIp.test.js > isPublicIp > null is rejected without throwing 0ms
+✓ test/isPublicIp.test.js > isPublicIp > "8.8.8.8 " is rejected without throwing 0ms
+✓ test/isPublicIp.test.js > isPublicIp > "999.1.1.1" is rejected without throwing 0ms
+✓ test/forceDown.test.js > applyForcedDown > leaves providers alone when the list is empty 3ms
+✓ test/forceDown.test.js > applyForcedDown > makes a named provider throw without calling the real one 2ms
+Test Files  12 passed (12)
+Tests  96 passed (96)
+```
+
+**The tests can fail.** Three bugs were put in on purpose and removed afterwards; each one turned
+the suite red:
+
+```
+MUTANT 1: dashboard list query loses its owner filter (WHERE (s.owner_id = $1 OR true))
+ FAIL  tenantIsolation.test.js > ... > Probe 1: A's submission appears in A's list, linked to A's widget
+ FAIL  tenantIsolation.test.js > ... > B's list contains only B's submissions
+      Tests  2 failed | 51 passed (53)
+MUTANT 2: geo chain returns null after the first failure (no fallback)
+ FAIL  geoService.test.js > ... > falls back to B when A is down
+ FAIL  geoFallback.test.js > Probe 4 ... > A down: the row has B's geo
+ FAIL  geoFallback.test.js > Probe 4 ... > A hangs: it is cut off by the timeout and B answers
+   (8 failed in total)
+MUTANT 3: a failed enqueue is rethrown instead of logged
+ FAIL  emailFailure.test.js > Probe 5 ... > when the queue itself is down, the visitor still gets 201, the row is stored, and the error is logged
+      Tests  1 failed | 52 passed (53)
+```
+
+(Mutants 1 and 3 ran only `test/api`, so 53 tests; mutant 2 ran the whole suite.)
 
 ## Shared requirements
 
@@ -869,6 +1034,8 @@ Happy path, worker without the flag (Mailpit inbox emptied first):
 worker: {"jobId":"125c85f5-…","submissionId":"125c85f5-…","attempt":1,"status":"sent","messageId":"<65ad2bb1-…@example.test>","msg":"Confirmation email job done"}
 mailpit: to step8-visitor@example.com | We received your message: Monthly newsletter
 ```
+
+Automated (Step 11): `test/api/emailFailure.test.js` > "Probe 5: retries, then dead letter and ALERT (real pg-boss)". See "Automated suite (Step 11)" below for the full output.
 
 ### S4. Real persistence: migrations, right indexes, isolated tenants (Steps 2, 3, 10)
 
@@ -1020,6 +1187,8 @@ mailpit total: 2   (one per submission; the retry added none)
  step8-retry@example.com   |    1 | completed
  step8-visitor@example.com |    1 | completed
 ```
+
+Automated (Step 11): `test/api/honeypot.test.js` > "Idempotency-Key (S5)": a retry returns the same id with 1 row; 5 parallel requests with one key → 1 row; a non-UUID key → 422; a second `send` for the same submission → `null` (in emailFailure.test.js). See "Automated suite (Step 11)" below for the full output.
 
 ### S6. Secrets clean (Steps 0, 2, 12)
 

@@ -20,7 +20,7 @@ const { values: args } = parseArgs({
 });
 const burst = Number(args.burst);
 const endpoint = new URL("/submissions", args.url).href;
-const PER_IP_LIMIT = 10; // must match perIpLimiter in src/http/middleware/rateLimit.js
+const PER_IP_LIMIT = 10; // must match DEFAULT_RATE_LIMITS.perIp in src/http/middleware/rateLimit.js
 
 function submit(i) {
   return fetch(endpoint, {

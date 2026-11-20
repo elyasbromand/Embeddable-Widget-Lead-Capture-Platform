@@ -17,7 +17,8 @@ export const CONFIRMATION_EMAIL_OPTIONS = {
 
 // createQueue is safe to call on every start: an existing queue is left as it is.
 // The dead-letter queue must exist before a queue can point at it.
-export async function ensureQueues(boss) {
+// overrides: tests shorten the delay (same retryLimit and dead letter) so 4 attempts take seconds.
+export async function ensureQueues(boss, overrides = {}) {
   await boss.createQueue(CONFIRMATION_EMAIL_DLQ);
-  await boss.createQueue(CONFIRMATION_EMAIL, CONFIRMATION_EMAIL_OPTIONS);
+  await boss.createQueue(CONFIRMATION_EMAIL, { ...CONFIRMATION_EMAIL_OPTIONS, ...overrides });
 }
